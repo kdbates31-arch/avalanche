@@ -1,171 +1,277 @@
-export default function RoofingAgencyCRM() {
-  const contacts = [
-    {
-      agency: 'State Farm - Westlake',
-      agent: 'Sarah Johnson',
-      phone: '(512) 555-0181',
-      email: 'sarah@agency.com',
-      status: 'Warm Relationship',
-      lastContact: '2026-05-10',
-      notes: 'Wants faster roof inspections and photos within 24 hours.'
-    },
-    {
-      agency: 'Allstate - Austin North',
-      agent: 'Mike Ramirez',
-      phone: '(512) 555-0147',
-      email: 'mike@allstate.com',
-      status: 'Needs Follow Up',
-      lastContact: '2026-04-28',
-      notes: 'Send storm damage checklist and referral program details.'
-    },
-    {
-      agency: 'Farmers Insurance',
-      agent: 'Emily Carter',
-      phone: '(512) 555-0175',
-      email: 'emily@farmers.com',
-      status: 'Active Referrals',
-      lastContact: '2026-05-20',
-      notes: 'Already referred 3 homeowners this month.'
-    }
-  ];
+import { useEffect, useState } from "react";
+import { supabase } from "./supabase";
 
-  const tasks = [
-    'Call 5 new insurance agencies this week',
-    'Drop off business cards and referral packets',
-    'Follow up after major storms within 24 hours',
-    'Track which agents send the most referrals'
-  ];
+export default function App() {
+  const [agencies, setAgencies] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+
+  const [form, setForm] = useState({
+    agency_name: "",
+    main_phone: "",
+    address: "",
+    city: "",
+    state: "TX",
+    website: "",
+    relationship_status: "New Prospect",
+    notes: ""
+  });
+
+  useEffect(() => {
+    loadAgencies();
+  }, []);
+
+  async function loadAgencies() {
+    setLoading(true);
+
+    const { data, error } = await supabase
+      .from("agencies")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      setMessage("Error loading agencies: " + error.message);
+    } else {
+      setAgencies(data || []);
+    }
+
+    setLoading(false);
+  }
+
+  async function addAgency(e) {
+    e.preventDefault();
+    setMessage("");
+
+    if (!form.agency_name.trim()) {
+      setMessage("Agency name is required.");
+      return;
+    }
+
+    setSaving(true);
+
+    const { error } = await supabase.from("agencies").insert([form]);
+
+    if (error) {
+      setMessage("Error saving agency: " + error.message);
+    } else {
+      setMessage("Agency saved successfully.");
+      setForm({
+        agency_name: "",
+        main_phone: "",
+        address: "",
+        city: "",
+        state: "TX",
+        website: "",
+        relationship_status: "New Prospect",
+        notes: ""
+      });
+      await loadAgencies();
+    }
+
+    setSaving(false);
+  }
+
+  async function deleteAgency(id) {
+    const confirmDelete = window.confirm("Delete this agency?");
+    if (!confirmDelete) return;
+
+    const { error } = await supabase.from("agencies").delete().eq("id", id);
+
+    if (error) {
+      setMessage("Error deleting agency: " + error.message);
+    } else {
+      setMessage("Agency deleted.");
+      await loadAgencies();
+    }
+  }
+
+  const totalAgencies = agencies.length;
+  const activeReferrals = agencies.filter(
+    (agency) => agency.relationship_status === "Active Referrals"
+  ).length;
+  const followUpsDue = agencies.filter(
+    (agency) => agency.relationship_status === "Needs Follow Up"
+  ).length;
+  const warmRelationships = agencies.filter(
+    (agency) => agency.relationship_status === "Warm Relationship"
+  ).length;
 
   return (
     <div className="min-h-screen bg-gray-100 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         <div className="bg-white rounded-3xl shadow-lg p-6">
-          <h1 className="text-4xl font-bold mb-2">Roofing Insurance Referral CRM</h1>
+          <h1 className="text-4xl font-bold mb-2">Avalanche CRM</h1>
           <p className="text-gray-600 text-lg">
-            Manage insurance agency relationships and increase claim referrals.
+            Manage insurance agency relationships and referral opportunities for your roofing business.
           </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-white rounded-2xl shadow p-5">
-            <p className="text-gray-500">Total Agencies</p>
-            <h2 className="text-3xl font-bold">24</h2>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow p-5">
-            <p className="text-gray-500">Active Referrals</p>
-            <h2 className="text-3xl font-bold">9</h2>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow p-5">
-            <p className="text-gray-500">Follow Ups Due</p>
-            <h2 className="text-3xl font-bold">6</h2>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow p-5">
-            <p className="text-gray-500">Monthly Claims</p>
-            <h2 className="text-3xl font-bold">17</h2>
-          </div>
+          <MetricCard label="Total Agencies" value={totalAgencies} />
+          <MetricCard label="Active Referrals" value={activeReferrals} />
+          <MetricCard label="Follow Ups Due" value={followUpsDue} />
+          <MetricCard label="Warm Relationships" value={warmRelationships} />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-white rounded-3xl shadow-lg p-6">
+          <div className="bg-white rounded-3xl shadow-lg p-6 lg:col-span-1">
+            <h2 className="text-2xl font-semibold mb-4">Add Insurance Agency</h2>
+
+            <form onSubmit={addAgency} className="space-y-4">
+              <Input label="Agency Name" value={form.agency_name} onChange={(value) => setForm({ ...form, agency_name: value })} required />
+              <Input label="Main Phone" value={form.main_phone} onChange={(value) => setForm({ ...form, main_phone: value })} />
+              <Input label="Address" value={form.address} onChange={(value) => setForm({ ...form, address: value })} />
+              <Input label="City" value={form.city} onChange={(value) => setForm({ ...form, city: value })} />
+              <Input label="State" value={form.state} onChange={(value) => setForm({ ...form, state: value })} />
+              <Input label="Website" value={form.website} onChange={(value) => setForm({ ...form, website: value })} />
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Relationship Status</label>
+                <select
+                  value={form.relationship_status}
+                  onChange={(e) => setForm({ ...form, relationship_status: e.target.value })}
+                  className="w-full border rounded-xl px-3 py-2"
+                >
+                  <option>New Prospect</option>
+                  <option>Needs Follow Up</option>
+                  <option>Warm Relationship</option>
+                  <option>Active Referrals</option>
+                  <option>Do Not Pursue</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                <textarea
+                  value={form.notes}
+                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                  className="w-full border rounded-xl px-3 py-2 min-h-24"
+                  placeholder="Relationship notes, claim preferences, contact history, etc."
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={saving}
+                className="w-full bg-black text-white px-4 py-3 rounded-xl hover:opacity-90 disabled:opacity-50"
+              >
+                {saving ? "Saving..." : "Save Agency"}
+              </button>
+            </form>
+
+            {message && (
+              <div className="mt-4 bg-gray-100 rounded-xl p-3 text-sm text-gray-700">
+                {message}
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white rounded-3xl shadow-lg p-6 lg:col-span-2">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-semibold">Insurance Agency Contacts</h2>
-              <button className="bg-black text-white px-4 py-2 rounded-xl hover:opacity-90">
-                Add Contact
+              <h2 className="text-2xl font-semibold">Insurance Agencies</h2>
+              <button onClick={loadAgencies} className="bg-gray-200 px-4 py-2 rounded-xl hover:bg-gray-300">
+                Refresh
               </button>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead>
-                  <tr className="border-b">
-                    <th className="py-3">Agency</th>
-                    <th className="py-3">Agent</th>
-                    <th className="py-3">Contact</th>
-                    <th className="py-3">Status</th>
-                    <th className="py-3">Last Contact</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {contacts.map((contact, index) => (
-                    <tr key={index} className="border-b hover:bg-gray-50">
-                      <td className="py-4 font-medium">{contact.agency}</td>
-                      <td className="py-4">{contact.agent}</td>
-                      <td className="py-4">
-                        <div>{contact.phone}</div>
-                        <div className="text-sm text-gray-500">{contact.email}</div>
-                      </td>
-                      <td className="py-4">
-                        <span className="bg-gray-200 px-3 py-1 rounded-full text-sm">
-                          {contact.status}
-                        </span>
-                      </td>
-                      <td className="py-4">{contact.lastContact}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div className="space-y-6">
-            <div className="bg-white rounded-3xl shadow-lg p-6">
-              <h2 className="text-2xl font-semibold mb-4">Relationship Strategy</h2>
-
-              <div className="space-y-4 text-gray-700">
-                <div className="p-4 bg-gray-100 rounded-2xl">
-                  <p className="font-semibold">Primary Goal</p>
-                  <p>
-                    Become the roofing company agents trust first when homeowners call about storm damage.
-                  </p>
-                </div>
-
-                <div className="p-4 bg-gray-100 rounded-2xl">
-                  <p className="font-semibold">Best Tactics</p>
-                  <ul className="list-disc ml-5 mt-2 space-y-1">
-                    <li>Fast inspections</li>
-                    <li>Clean photo documentation</li>
-                    <li>Zero-pressure communication</li>
-                    <li>Quick claim assistance</li>
-                  </ul>
-                </div>
+            {loading ? (
+              <p className="text-gray-500">Loading agencies...</p>
+            ) : agencies.length === 0 ? (
+              <div className="bg-gray-100 rounded-2xl p-6 text-gray-600">
+                No agencies saved yet. Add your first insurance agency using the form.
               </div>
-            </div>
+            ) : (
+              <div className="space-y-4">
+                {agencies.map((agency) => (
+                  <div key={agency.id} className="border rounded-2xl p-4 hover:bg-gray-50">
+                    <div className="flex justify-between gap-4">
+                      <div>
+                        <h3 className="text-xl font-semibold">{agency.agency_name}</h3>
+                        <p className="text-gray-600">{agency.main_phone || "No phone saved"}</p>
+                        <p className="text-gray-600">
+                          {[agency.address, agency.city, agency.state].filter(Boolean).join(", ")}
+                        </p>
+                        {agency.website && (
+                          <a className="text-blue-600 underline" href={agency.website.startsWith("http") ? agency.website : `https://${agency.website}`} target="_blank" rel="noreferrer">
+                            {agency.website}
+                          </a>
+                        )}
+                      </div>
 
-            <div className="bg-white rounded-3xl shadow-lg p-6">
-              <h2 className="text-2xl font-semibold mb-4">Weekly Tasks</h2>
+                      <div className="text-right space-y-2">
+                        <span className="inline-block bg-gray-200 px-3 py-1 rounded-full text-sm">
+                          {agency.relationship_status || "New Prospect"}
+                        </span>
+                        <div>
+                          <button
+                            onClick={() => deleteAgency(agency.id)}
+                            className="text-red-600 text-sm hover:underline"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
 
-              <div className="space-y-3">
-                {tasks.map((task, index) => (
-                  <div key={index} className="flex items-start gap-3 bg-gray-100 p-3 rounded-2xl">
-                    <input type="checkbox" className="mt-1" />
-                    <p>{task}</p>
+                    {agency.notes && (
+                      <div className="mt-3 bg-gray-100 rounded-xl p-3 text-gray-700">
+                        {agency.notes}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
-            </div>
+            )}
           </div>
         </div>
 
         <div className="bg-white rounded-3xl shadow-lg p-6">
-          <h2 className="text-2xl font-semibold mb-4">Notes Template For Each Agent</h2>
-
-          <div className="bg-gray-100 rounded-2xl p-5 text-gray-700 whitespace-pre-line">
-{`• Birthday or personal details
-• How many claims they handle monthly
-• Preferred communication style
-• Referral history
-• Response time expectations
-• Favorite adjusters to work with
-• Whether they like text, phone, or email
-• Last lunch / coffee meeting
-• Storm follow up status`}
+          <h2 className="text-2xl font-semibold mb-4">Next Build Steps</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-gray-700">
+            <div className="bg-gray-100 rounded-2xl p-4">
+              <p className="font-semibold">1. Agents</p>
+              <p>Add individual agents inside each agency.</p>
+            </div>
+            <div className="bg-gray-100 rounded-2xl p-4">
+              <p className="font-semibold">2. Follow Ups</p>
+              <p>Track call dates, visits, lunches, and next actions.</p>
+            </div>
+            <div className="bg-gray-100 rounded-2xl p-4">
+              <p className="font-semibold">3. Referrals</p>
+              <p>Track claims, inspections, job value, and close rate.</p>
+            </div>
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+function MetricCard({ label, value }) {
+  return (
+    <div className="bg-white rounded-2xl shadow p-5">
+      <p className="text-gray-500">{label}</p>
+      <h2 className="text-3xl font-bold">{value}</h2>
+    </div>
+  );
+}
+
+function Input({ label, value, onChange, required }) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">
+        {label}{required ? " *" : ""}
+      </label>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        required={required}
+        className="w-full border rounded-xl px-3 py-2"
+      />
+    </div>
+  );
+}
+
   );
 }
