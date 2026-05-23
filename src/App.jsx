@@ -7,7 +7,7 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
 
-  const [form, setForm] = useState({
+  const emptyForm = {
     agency_name: "",
     main_phone: "",
     address: "",
@@ -16,7 +16,9 @@ export default function App() {
     website: "",
     relationship_status: "New Prospect",
     notes: ""
-  });
+  };
+
+  const [form, setForm] = useState(emptyForm);
 
   useEffect(() => {
     loadAgencies();
@@ -56,16 +58,7 @@ export default function App() {
       setMessage("Error saving agency: " + error.message);
     } else {
       setMessage("Agency saved successfully.");
-      setForm({
-        agency_name: "",
-        main_phone: "",
-        address: "",
-        city: "",
-        state: "TX",
-        website: "",
-        relationship_status: "New Prospect",
-        notes: ""
-      });
+      setForm(emptyForm);
       await loadAgencies();
     }
 
@@ -119,15 +112,42 @@ export default function App() {
             <h2 className="text-2xl font-semibold mb-4">Add Insurance Agency</h2>
 
             <form onSubmit={addAgency} className="space-y-4">
-              <Input label="Agency Name" value={form.agency_name} onChange={(value) => setForm({ ...form, agency_name: value })} required />
-              <Input label="Main Phone" value={form.main_phone} onChange={(value) => setForm({ ...form, main_phone: value })} />
-              <Input label="Address" value={form.address} onChange={(value) => setForm({ ...form, address: value })} />
-              <Input label="City" value={form.city} onChange={(value) => setForm({ ...form, city: value })} />
-              <Input label="State" value={form.state} onChange={(value) => setForm({ ...form, state: value })} />
-              <Input label="Website" value={form.website} onChange={(value) => setForm({ ...form, website: value })} />
+              <Input
+                label="Agency Name"
+                value={form.agency_name}
+                onChange={(value) => setForm({ ...form, agency_name: value })}
+                required
+              />
+              <Input
+                label="Main Phone"
+                value={form.main_phone}
+                onChange={(value) => setForm({ ...form, main_phone: value })}
+              />
+              <Input
+                label="Address"
+                value={form.address}
+                onChange={(value) => setForm({ ...form, address: value })}
+              />
+              <Input
+                label="City"
+                value={form.city}
+                onChange={(value) => setForm({ ...form, city: value })}
+              />
+              <Input
+                label="State"
+                value={form.state}
+                onChange={(value) => setForm({ ...form, state: value })}
+              />
+              <Input
+                label="Website"
+                value={form.website}
+                onChange={(value) => setForm({ ...form, website: value })}
+              />
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Relationship Status</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Relationship Status
+                </label>
                 <select
                   value={form.relationship_status}
                   onChange={(e) => setForm({ ...form, relationship_status: e.target.value })}
@@ -142,7 +162,9 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Notes
+                </label>
                 <textarea
                   value={form.notes}
                   onChange={(e) => setForm({ ...form, notes: e.target.value })}
@@ -170,7 +192,10 @@ export default function App() {
           <div className="bg-white rounded-3xl shadow-lg p-6 lg:col-span-2">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-semibold">Insurance Agencies</h2>
-              <button onClick={loadAgencies} className="bg-gray-200 px-4 py-2 rounded-xl hover:bg-gray-300">
+              <button
+                onClick={loadAgencies}
+                className="bg-gray-200 px-4 py-2 rounded-xl hover:bg-gray-300"
+              >
                 Refresh
               </button>
             </div>
@@ -193,7 +218,12 @@ export default function App() {
                           {[agency.address, agency.city, agency.state].filter(Boolean).join(", ")}
                         </p>
                         {agency.website && (
-                          <a className="text-blue-600 underline" href={agency.website.startsWith("http") ? agency.website : `https://${agency.website}`} target="_blank" rel="noreferrer">
+                          <a
+                            className="text-blue-600 underline"
+                            href={agency.website.startsWith("http") ? agency.website : `https://${agency.website}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
                             {agency.website}
                           </a>
                         )}
@@ -225,24 +255,6 @@ export default function App() {
             )}
           </div>
         </div>
-
-        <div className="bg-white rounded-3xl shadow-lg p-6">
-          <h2 className="text-2xl font-semibold mb-4">Next Build Steps</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-gray-700">
-            <div className="bg-gray-100 rounded-2xl p-4">
-              <p className="font-semibold">1. Agents</p>
-              <p>Add individual agents inside each agency.</p>
-            </div>
-            <div className="bg-gray-100 rounded-2xl p-4">
-              <p className="font-semibold">2. Follow Ups</p>
-              <p>Track call dates, visits, lunches, and next actions.</p>
-            </div>
-            <div className="bg-gray-100 rounded-2xl p-4">
-              <p className="font-semibold">3. Referrals</p>
-              <p>Track claims, inspections, job value, and close rate.</p>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );
@@ -257,7 +269,7 @@ function MetricCard({ label, value }) {
   );
 }
 
-function Input({ label, value, onChange, required }) {
+function Input({ label, value, onChange, required = false }) {
   return (
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -270,8 +282,5 @@ function Input({ label, value, onChange, required }) {
         className="w-full border rounded-xl px-3 py-2"
       />
     </div>
-  );
-}
-
   );
 }
