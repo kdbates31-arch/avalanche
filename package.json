@@ -5,11 +5,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "latest",
-    "vite": "latest",
-    "react": "latest",
-    "react-dom": "latest",
-    "lucide-react": "latest"
-  },
-  "devDependencies": {}
+  "@supabase/supabase-js": "latest",
+  "@vitejs/plugin-react": "latest",
+  "vite": "latest",
+  "react": "latest",
+  "react-dom": "latest",
+  "lucide-react": "latest"
+}
 }
