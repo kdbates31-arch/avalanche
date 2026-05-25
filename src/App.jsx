@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabase";
 
+const CC_EMAIL = "kristopher.bates@coolroofs.co";
+
 const STATUS_OPTIONS = [
   "New Prospect",
   "Needs Follow Up",
@@ -29,13 +31,12 @@ const SORT_OPTIONS = [
   "Recently Contacted"
 ];
 
-const CC_EMAIL = "kristopher.bates@coolroofs.co";
-
 const EMPTY_AGENT = {
   agency_name: "",
   agent_first_name: "",
   agent_last_name: "",
   agent_phone: "",
+  main_phone: "",
   agent_email: "",
   address: "",
   city: "",
@@ -69,6 +70,7 @@ export default function App() {
   const [agentForm, setAgentForm] = useState(EMPTY_AGENT);
   const [selectedAgent, setSelectedAgent] = useState(null);
   const [quickActionAgent, setQuickActionAgent] = useState(null);
+  const [callChoiceAgent, setCallChoiceAgent] = useState(null);
   const [quickActionType, setQuickActionType] = useState("");
   const [engagementForm, setEngagementForm] = useState(EMPTY_ENGAGEMENT);
   const [search, setSearch] = useState("");
@@ -116,26 +118,16 @@ export default function App() {
     return [agent.agent_first_name, agent.agent_last_name].filter(Boolean).join(" ") || agent.agency_name || "Unnamed Agent";
   }
 
-  function emailLink(agent) {
-    if (!agent.agent_email) return "#";
-    const subject = encodeURIComponent(`Following up from CoolRoofs`);
-    const body = encodeURIComponent(`Hi ${agent.agent_first_name || ""},
-
-`);
-    return `mailto:${agent.agent_email}?cc=${encodeURIComponent(CC_EMAIL)}&subject=${subject}&body=${body}`;
-  }
-
-  function openFilteredAgents(filter, title) {
-    setSearch("");
-    setSortBy("Most Overdue");
-    setStatusFilter(filter);
-    setDirectoryTitle(title || "Agent Directory");
-    setActiveTab("agents");
-  }
-
   function parseTags(tags) {
     if (!tags) return [];
     return String(tags).split(",").map((tag) => tag.trim()).filter(Boolean);
+  }
+
+  function emailLink(agent) {
+    if (!agent.agent_email) return "#";
+    const subject = encodeURIComponent("Following up from CoolRoofs");
+    const body = encodeURIComponent(`Hi ${agent.agent_first_name || ""},\n\n`);
+    return `mailto:${agent.agent_email}?cc=${encodeURIComponent(CC_EMAIL)}&subject=${subject}&body=${body}`;
   }
 
   function scoreAgent(agent, agentEngagements = []) {
@@ -164,6 +156,14 @@ export default function App() {
     }
 
     return Math.max(0, Math.min(100, score));
+  }
+
+  function openFilteredAgents(filter, title) {
+    setSearch("");
+    setSortBy("Most Overdue");
+    setStatusFilter(filter);
+    setDirectoryTitle(title || "Agent Directory");
+    setActiveTab("agents");
   }
 
   async function loadDashboard() {
@@ -413,7 +413,7 @@ export default function App() {
 
     if (term) {
       list = list.filter((agent) => {
-        const text = [agent.name, agent.agency_name, agent.agent_phone, agent.agent_email, agent.city, agent.tags, agent.notes, agent.favorite_food]
+        const text = [agent.name, agent.agency_name, agent.agent_phone, agent.main_phone, agent.agent_email, agent.city, agent.tags, agent.notes, agent.favorite_food]
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
@@ -446,6 +446,7 @@ export default function App() {
             warmAgents={warmAgents}
             partnerAgents={partnerAgents}
             openQuickAction={openQuickAction}
+            openCallChoice={setCallChoiceAgent}
             openAgent={setSelectedAgent}
             openFilteredAgents={openFilteredAgents}
           />
@@ -463,7 +464,7 @@ export default function App() {
             setSortBy={setSortBy}
             setDirectoryTitle={setDirectoryTitle}
             openAgent={setSelectedAgent}
-            openQuickAction={openQuickAction}
+            openCallChoice={setCallChoiceAgent}
             emailLink={emailLink}
           />
         )}
@@ -483,7 +484,7 @@ export default function App() {
           <PartnersScreen
             agents={partnerAgents}
             openAgent={setSelectedAgent}
-            openQuickAction={openQuickAction}
+            openCallChoice={setCallChoiceAgent}
             emailLink={emailLink}
           />
         )}
@@ -499,10 +500,19 @@ export default function App() {
           engagements={engagements[selectedAgent.id] || []}
           close={() => setSelectedAgent(null)}
           openQuickAction={openQuickAction}
+          openCallChoice={setCallChoiceAgent}
           updateStatus={updateStatus}
           archiveAgent={archiveAgent}
           deleteAgent={deleteAgent}
           emailLink={emailLink}
+        />
+      )}
+
+      {callChoiceAgent && (
+        <CallChoiceModal
+          agent={callChoiceAgent}
+          close={() => setCallChoiceAgent(null)}
+          openQuickAction={openQuickAction}
         />
       )}
 
@@ -541,7 +551,7 @@ function Header({ activeTab, onRefresh }) {
   );
 }
 
-function MissionScreen({ missionAgents, followUpAgents, warmAgents, partnerAgents, openQuickAction, openAgent, openFilteredAgents }) {
+function MissionScreen({ missionAgents, followUpAgents, warmAgents, partnerAgents, openQuickAction, openCallChoice, openAgent, openFilteredAgents }) {
   const fifteenDayDue = followUpAgents.filter((agent) => agent.daysRemaining !== null && agent.daysRemaining <= 0);
   const thirtyDayDue = warmAgents.filter((agent) => agent.daysRemaining !== null && agent.daysRemaining <= 0);
 
@@ -552,15 +562,15 @@ function MissionScreen({ missionAgents, followUpAgents, warmAgents, partnerAgent
           <span>Due Today</span>
           <strong>{missionAgents.length}</strong>
         </button>
-        <button className="metric metricButton" onClick={() => openFilteredAgents("15 Day Due", "15-Day Follow-Ups Due") }>
+        <button className="metric metricButton" onClick={() => openFilteredAgents("15 Day Due", "15-Day Follow-Ups Due")}>
           <span>15-Day Due</span>
           <strong>{fifteenDayDue.length}</strong>
         </button>
-        <button className="metric metricButton" onClick={() => openFilteredAgents("30 Day Due", "30-Day Warm Touches Due") }>
+        <button className="metric metricButton" onClick={() => openFilteredAgents("30 Day Due", "30-Day Warm Touches Due")}>
           <span>30-Day Due</span>
           <strong>{thirtyDayDue.length}</strong>
         </button>
-        <button className="metric metricButton" onClick={() => openFilteredAgents("Active Referral Partner", "Active Referral Partners") }>
+        <button className="metric metricButton" onClick={() => openFilteredAgents("Active Referral Partner", "Active Referral Partners")}>
           <span>Partners</span>
           <strong>{partnerAgents.length}</strong>
         </button>
@@ -571,19 +581,19 @@ function MissionScreen({ missionAgents, followUpAgents, warmAgents, partnerAgent
           <EmptyState text="No overdue follow-ups. The machine is clean right now." />
         ) : (
           missionAgents.slice(0, 12).map((agent) => (
-            <AgentRow key={agent.id} agent={agent} openAgent={openAgent} openQuickAction={openQuickAction} emailLink={emailLink} priority />
+            <AgentRow key={agent.id} agent={agent} openAgent={openAgent} openCallChoice={openCallChoice} emailLink={() => "#"} priority />
           ))
         )}
       </Section>
 
       <Section title="Warm Relationship Watch" subtitle="30-day keep-warm cycle.">
-        {warmAgents.length === 0 ? <EmptyState text="No warm relationships yet." /> : warmAgents.slice(0, 6).map((agent) => <AgentRow key={agent.id} agent={agent} openAgent={openAgent} openQuickAction={openQuickAction} emailLink={emailLink} />)}
+        {warmAgents.length === 0 ? <EmptyState text="No warm relationships yet." /> : warmAgents.slice(0, 6).map((agent) => <AgentRow key={agent.id} agent={agent} openAgent={openAgent} openCallChoice={openCallChoice} emailLink={() => "#"} />)}
       </Section>
     </div>
   );
 }
 
-function AgentsScreen({ title, agents, search, setSearch, statusFilter, setStatusFilter, sortBy, setSortBy, setDirectoryTitle, openAgent, openQuickAction, emailLink }) {
+function AgentsScreen({ title, agents, search, setSearch, statusFilter, setStatusFilter, sortBy, setSortBy, setDirectoryTitle, openAgent, openCallChoice, emailLink }) {
   return (
     <div className="stack">
       <div className="filterCard">
@@ -603,8 +613,8 @@ function AgentsScreen({ title, agents, search, setSearch, statusFilter, setStatu
         </div>
       </div>
 
-      <Section title={`${title || "Agent Directory"} (${agents.length})`} subtitle="Showing saved agents from Supabase. Clear search and set filter to All if something is missing.">
-        {agents.length === 0 ? <EmptyState text="No agents found." /> : agents.map((agent) => <AgentRow key={agent.id} agent={agent} openAgent={openAgent} openQuickAction={openQuickAction} emailLink={emailLink} />)}
+      <Section title={`${title || "Agent Directory"} (${agents.length})`} subtitle="Tap any row to view the full profile and history.">
+        {agents.length === 0 ? <EmptyState text="No agents found." /> : agents.map((agent) => <AgentRow key={agent.id} agent={agent} openAgent={openAgent} openCallChoice={openCallChoice} emailLink={emailLink} />)}
       </Section>
     </div>
   );
@@ -618,7 +628,8 @@ function AddAgentScreen({ agentForm, setAgentForm, saveAgent, saving, calculateN
         <Input label="First Name" value={agentForm.agent_first_name} onChange={(value) => setAgentForm({ ...agentForm, agent_first_name: value })} />
         <Input label="Last Name" value={agentForm.agent_last_name} onChange={(value) => setAgentForm({ ...agentForm, agent_last_name: value })} />
       </div>
-      <Input label="Cell / Phone" value={agentForm.agent_phone} onChange={(value) => setAgentForm({ ...agentForm, agent_phone: value })} />
+      <Input label="Mobile Phone" value={agentForm.agent_phone} onChange={(value) => setAgentForm({ ...agentForm, agent_phone: value })} />
+      <Input label="Office Phone" value={agentForm.main_phone} onChange={(value) => setAgentForm({ ...agentForm, main_phone: value })} />
       <Input label="Email" value={agentForm.agent_email} onChange={(value) => setAgentForm({ ...agentForm, agent_email: value })} />
       <Input label="Address" value={agentForm.address} onChange={(value) => setAgentForm({ ...agentForm, address: value })} />
       <div className="twoCol">
@@ -644,11 +655,11 @@ function AddAgentScreen({ agentForm, setAgentForm, saveAgent, saving, calculateN
   );
 }
 
-function PartnersScreen({ agents, openAgent, openQuickAction, emailLink }) {
+function PartnersScreen({ agents, openAgent, openCallChoice, emailLink }) {
   return (
     <div className="stack">
       <Section title="Active Referral Partners" subtitle="These relationships should never be allowed to go cold.">
-        {agents.length === 0 ? <EmptyState text="No referral partners yet." /> : agents.map((agent) => <AgentRow key={agent.id} agent={agent} openAgent={openAgent} openQuickAction={openQuickAction} emailLink={emailLink} />)}
+        {agents.length === 0 ? <EmptyState text="No referral partners yet." /> : agents.map((agent) => <AgentRow key={agent.id} agent={agent} openAgent={openAgent} openCallChoice={openCallChoice} emailLink={emailLink} />)}
       </Section>
     </div>
   );
@@ -666,7 +677,7 @@ function PlaybookScreen() {
   );
 }
 
-function AgentRow({ agent, openAgent, openQuickAction, emailLink, priority }) {
+function AgentRow({ agent, openAgent, openCallChoice, emailLink, priority }) {
   const overdue = agent.daysRemaining !== null && agent.daysRemaining < 0;
   const dueToday = agent.daysRemaining === 0;
   const daysLabel = agent.daysRemaining === null ? "No cycle" : agent.daysRemaining < 0 ? `${Math.abs(agent.daysRemaining)} days overdue` : agent.daysRemaining === 0 ? "Due today" : `${agent.daysRemaining} days left`;
@@ -681,16 +692,16 @@ function AgentRow({ agent, openAgent, openQuickAction, emailLink, priority }) {
         <div className="muted">{agent.agency_name}</div>
         <div className={overdue || dueToday ? "dangerText" : "muted"}>{daysLabel} · {agent.relationship_status || "No status"}</div>
       </div>
-      <div className="rowActions">
-        <button onClick={() => openQuickAction(agent, "Phone Call")}>Call</button>
-        {agent.agent_email && <a className="rowEmailButton" href={emailLink(agent)}>Email</a>}
-        <button onClick={() => openQuickAction(agent, "Office Stop In")}>Stop In</button>
+      <div className="rowActions threeActions">
+        <button onClick={() => openCallChoice(agent)}>Call</button>
+        {agent.agent_email && <a href={emailLink(agent)}>Email</a>}
+        <button onClick={() => openAgent(agent)}>Open</button>
       </div>
     </div>
   );
 }
 
-function AgentProfile({ agent, engagements, close, openQuickAction, updateStatus, archiveAgent, deleteAgent, emailLink }) {
+function AgentProfile({ agent, engagements, close, openQuickAction, openCallChoice, updateStatus, archiveAgent, deleteAgent, emailLink }) {
   const tags = parseTagsSafe(agent.tags);
   const address = [agent.address, agent.city, agent.state].filter(Boolean).join(", ");
 
@@ -715,10 +726,17 @@ function AgentProfile({ agent, engagements, close, openQuickAction, updateStatus
         </div>
 
         <div className="quickGrid">
-          {agent.agent_phone && <a href={`tel:${agent.agent_phone}`}>Call</a>}
+          {(agent.agent_phone || agent.main_phone) && <button onClick={() => openCallChoice(agent)}>Call</button>}
           {agent.agent_phone && <a href={`sms:${agent.agent_phone}`}>Text</a>}
           {agent.agent_email && <a href={emailLink(agent)}>Email</a>}
           {address && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`} target="_blank" rel="noreferrer">Map</a>}
+        </div>
+
+        <div className="contactCard">
+          <h3>Contact Info</h3>
+          <p><strong>Mobile:</strong> {agent.agent_phone || "Not saved"}</p>
+          <p><strong>Office:</strong> {agent.main_phone || "Not saved"}</p>
+          <p><strong>Email:</strong> {agent.agent_email || "Not saved"}</p>
         </div>
 
         <div className="quickGrid">
@@ -759,6 +777,26 @@ function AgentProfile({ agent, engagements, close, openQuickAction, updateStatus
         <div className="dangerZone">
           <button onClick={() => archiveAgent(agent)}>Move to Do Not Pursue</button>
           <button onClick={() => deleteAgent(agent)}>Delete Permanently</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CallChoiceModal({ agent, close, openQuickAction }) {
+  return (
+    <div className="modalOverlay">
+      <div className="actionSheet">
+        <div className="sheetHeader">
+          <button type="button" onClick={close}>Cancel</button>
+          <strong>Choose Number</strong>
+          <span />
+        </div>
+        <p className="modalSub">{displayAgentName(agent)} · {agent.agency_name}</p>
+        <div className="callChoiceList">
+          {agent.agent_phone ? <a className="callChoiceButton" href={`tel:${agent.agent_phone}`}>Call Mobile: {agent.agent_phone}</a> : <div className="disabledChoice">No mobile phone saved</div>}
+          {agent.main_phone ? <a className="callChoiceButton" href={`tel:${agent.main_phone}`}>Call Office: {agent.main_phone}</a> : <div className="disabledChoice">No office phone saved</div>}
+          <button className="secondaryFullButton" type="button" onClick={() => { close(); openQuickAction(agent, "Phone Call"); }}>Log Phone Call Notes</button>
         </div>
       </div>
     </div>
@@ -896,7 +934,7 @@ h2, h3, p { margin-top: 0; }
 .metric span { display: block; color: #94a3b8; font-size: 12px; margin-bottom: 8px; }
 .metric strong { font-size: 28px; }
 .dangerMetric { background: rgba(127, 29, 29, .32); border-color: rgba(248, 113, 113, .35); }
-.sectionCard, .formCard, .filterCard, .card, .play { background: rgba(15, 23, 42, .9); border: 1px solid rgba(148, 163, 184, .16); border-radius: 24px; padding: 16px; box-shadow: 0 18px 50px rgba(0,0,0,.22); }
+.sectionCard, .formCard, .filterCard, .card, .play, .contactCard { background: rgba(15, 23, 42, .9); border: 1px solid rgba(148, 163, 184, .16); border-radius: 24px; padding: 16px; box-shadow: 0 18px 50px rgba(0,0,0,.22); }
 .sectionHead h2 { margin: 0; font-size: 22px; }
 .sectionHead p { margin: 4px 0 12px; color: #94a3b8; font-size: 14px; }
 .sectionBody { display: flex; flex-direction: column; gap: 10px; }
@@ -911,7 +949,7 @@ h2, h3, p { margin-top: 0; }
 .dangerText { color: #fca5a5; font-size: 13px; margin-top: 3px; font-weight: 700; }
 .rowActions { display: flex; gap: 7px; }
 .rowActions button, .rowActions a, .quickGrid button, .quickGrid a { background: #f8fafc; color: #020617; border: none; border-radius: 14px; padding: 10px 12px; font-weight: 800; text-decoration: none; text-align: center; }
-.rowEmailButton { display: inline-flex; align-items: center; justify-content: center; }
+.threeActions { flex-wrap: wrap; justify-content: flex-end; }
 .filterCard { display: flex; flex-direction: column; gap: 10px; }
 .searchInput, input, textarea, select { width: 100%; background: rgba(2, 6, 23, .8); color: #f8fafc; border: 1px solid rgba(148, 163, 184, .25); border-radius: 15px; padding: 12px; outline: none; }
 textarea { min-height: 96px; resize: vertical; }
@@ -939,15 +977,20 @@ textarea { min-height: 96px; resize: vertical; }
 .dangerZone { display: flex; gap: 10px; margin: 16px 0 6px; }
 .dangerZone button { border: 1px solid rgba(248, 113, 113, .35); color: #fca5a5; background: rgba(127, 29, 29, .18); border-radius: 14px; padding: 10px; }
 .modalSub { color: #94a3b8; margin-bottom: 14px; }
+.callChoiceList { display: flex; flex-direction: column; gap: 10px; }
+.callChoiceButton, .secondaryFullButton, .disabledChoice { display: block; width: 100%; text-align: center; border-radius: 18px; padding: 15px; font-weight: 900; text-decoration: none; }
+.callChoiceButton { background: #f8fafc; color: #020617; }
+.secondaryFullButton { background: rgba(255,255,255,.08); color: #f8fafc; border: 1px solid rgba(255,255,255,.16); }
+.disabledChoice { background: rgba(148,163,184,.08); color: #64748b; border: 1px solid rgba(148,163,184,.12); }
 .play h3 { margin-bottom: 6px; }
-.play p { color: #cbd5e1; margin-bottom: 0; }
+.play p, .contactCard p { color: #cbd5e1; margin-bottom: 6px; }
 @media (max-width: 640px) {
   .screen { padding: 10px 10px 98px; }
   .topHeader { border-radius: 0 0 22px 22px; padding: 15px; }
   h1 { font-size: 24px; }
   .metricGrid { grid-template-columns: repeat(2, 1fr); }
   .agentRow { align-items: stretch; flex-direction: column; }
-  .rowActions { display: grid; grid-template-columns: 1fr 1fr; }
+  .rowActions { display: grid; grid-template-columns: 1fr 1fr 1fr; }
   .profileStats, .quickGrid { grid-template-columns: repeat(2, 1fr); }
   .filterRow, .twoCol { grid-template-columns: 1fr; }
   .bottomNav { bottom: 8px; }
