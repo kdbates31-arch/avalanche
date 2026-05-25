@@ -29,6 +29,8 @@ const SORT_OPTIONS = [
   "Recently Contacted"
 ];
 
+const CC_EMAIL = "kristopher.bates@coolroofs.co";
+
 const EMPTY_AGENT = {
   agency_name: "",
   agent_first_name: "",
@@ -72,6 +74,7 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All Active");
   const [sortBy, setSortBy] = useState("Most Overdue");
+  const [directoryTitle, setDirectoryTitle] = useState("Agent Directory");
 
   useEffect(() => {
     loadDashboard();
@@ -111,6 +114,23 @@ export default function App() {
 
   function displayName(agent) {
     return [agent.agent_first_name, agent.agent_last_name].filter(Boolean).join(" ") || agent.agency_name || "Unnamed Agent";
+  }
+
+  function emailLink(agent) {
+    if (!agent.agent_email) return "#";
+    const subject = encodeURIComponent(`Following up from CoolRoofs`);
+    const body = encodeURIComponent(`Hi ${agent.agent_first_name || ""},
+
+`);
+    return `mailto:${agent.agent_email}?cc=${encodeURIComponent(CC_EMAIL)}&subject=${subject}&body=${body}`;
+  }
+
+  function openFilteredAgents(filter, title) {
+    setSearch("");
+    setSortBy("Most Overdue");
+    setStatusFilter(filter);
+    setDirectoryTitle(title || "Agent Directory");
+    setActiveTab("agents");
   }
 
   function parseTags(tags) {
@@ -373,6 +393,20 @@ export default function App() {
 
     if (statusFilter === "All Active") {
       list = list.filter((agent) => agent.relationship_status !== "Do Not Pursue");
+    } else if (statusFilter === "Due Now") {
+      list = list.filter((agent) => agent.relationship_status !== "Do Not Pursue" && agent.daysRemaining !== null && agent.daysRemaining <= 0);
+    } else if (statusFilter === "15 Day Due") {
+      list = list.filter((agent) =>
+        (agent.relationship_status === "Needs Follow Up" || agent.relationship_status === "New Prospect") &&
+        agent.daysRemaining !== null &&
+        agent.daysRemaining <= 0
+      );
+    } else if (statusFilter === "30 Day Due") {
+      list = list.filter((agent) =>
+        agent.relationship_status === "Warm Relationship" &&
+        agent.daysRemaining !== null &&
+        agent.daysRemaining <= 0
+      );
     } else if (statusFilter !== "All") {
       list = list.filter((agent) => agent.relationship_status === statusFilter);
     }
@@ -413,11 +447,13 @@ export default function App() {
             partnerAgents={partnerAgents}
             openQuickAction={openQuickAction}
             openAgent={setSelectedAgent}
+            openFilteredAgents={openFilteredAgents}
           />
         )}
 
         {!loading && activeTab === "agents" && (
           <AgentsScreen
+            title={directoryTitle}
             agents={directoryAgents}
             search={search}
             setSearch={setSearch}
@@ -425,8 +461,10 @@ export default function App() {
             setStatusFilter={setStatusFilter}
             sortBy={sortBy}
             setSortBy={setSortBy}
+            setDirectoryTitle={setDirectoryTitle}
             openAgent={setSelectedAgent}
             openQuickAction={openQuickAction}
+            emailLink={emailLink}
           />
         )}
 
@@ -446,6 +484,7 @@ export default function App() {
             agents={partnerAgents}
             openAgent={setSelectedAgent}
             openQuickAction={openQuickAction}
+            emailLink={emailLink}
           />
         )}
 
@@ -463,6 +502,7 @@ export default function App() {
           updateStatus={updateStatus}
           archiveAgent={archiveAgent}
           deleteAgent={deleteAgent}
+          emailLink={emailLink}
         />
       )}
 
@@ -501,41 +541,59 @@ function Header({ activeTab, onRefresh }) {
   );
 }
 
-function MissionScreen({ missionAgents, followUpAgents, warmAgents, partnerAgents, openQuickAction, openAgent }) {
+function MissionScreen({ missionAgents, followUpAgents, warmAgents, partnerAgents, openQuickAction, openAgent, openFilteredAgents }) {
+  const fifteenDayDue = followUpAgents.filter((agent) => agent.daysRemaining !== null && agent.daysRemaining <= 0);
+  const thirtyDayDue = warmAgents.filter((agent) => agent.daysRemaining !== null && agent.daysRemaining <= 0);
+
   return (
     <div className="stack">
       <div className="metricGrid">
-        <Metric label="Due Today" value={missionAgents.length} danger />
-        <Metric label="15-Day" value={followUpAgents.length} />
-        <Metric label="Warm" value={warmAgents.length} />
-        <Metric label="Partners" value={partnerAgents.length} />
+        <button className="metric metricButton dangerMetric" onClick={() => openFilteredAgents("Due Now", "All Follow-Ups Due Now")}>
+          <span>Due Today</span>
+          <strong>{missionAgents.length}</strong>
+        </button>
+        <button className="metric metricButton" onClick={() => openFilteredAgents("15 Day Due", "15-Day Follow-Ups Due") }>
+          <span>15-Day Due</span>
+          <strong>{fifteenDayDue.length}</strong>
+        </button>
+        <button className="metric metricButton" onClick={() => openFilteredAgents("30 Day Due", "30-Day Warm Touches Due") }>
+          <span>30-Day Due</span>
+          <strong>{thirtyDayDue.length}</strong>
+        </button>
+        <button className="metric metricButton" onClick={() => openFilteredAgents("Active Referral Partner", "Active Referral Partners") }>
+          <span>Partners</span>
+          <strong>{partnerAgents.length}</strong>
+        </button>
       </div>
 
-      <Section title="Priority Calls" subtitle="These are the relationships that need oxygen first.">
+      <Section title="Priority Calls" subtitle="Tap a tile above to open the full filtered list.">
         {missionAgents.length === 0 ? (
           <EmptyState text="No overdue follow-ups. The machine is clean right now." />
         ) : (
           missionAgents.slice(0, 12).map((agent) => (
-            <AgentRow key={agent.id} agent={agent} openAgent={openAgent} openQuickAction={openQuickAction} priority />
+            <AgentRow key={agent.id} agent={agent} openAgent={openAgent} openQuickAction={openQuickAction} emailLink={emailLink} priority />
           ))
         )}
       </Section>
 
-      <Section title="Warm Relationship Watch" subtitle="Keep these alive before they go cold.">
-        {warmAgents.length === 0 ? <EmptyState text="No warm relationships yet." /> : warmAgents.slice(0, 6).map((agent) => <AgentRow key={agent.id} agent={agent} openAgent={openAgent} openQuickAction={openQuickAction} />)}
+      <Section title="Warm Relationship Watch" subtitle="30-day keep-warm cycle.">
+        {warmAgents.length === 0 ? <EmptyState text="No warm relationships yet." /> : warmAgents.slice(0, 6).map((agent) => <AgentRow key={agent.id} agent={agent} openAgent={openAgent} openQuickAction={openQuickAction} emailLink={emailLink} />)}
       </Section>
     </div>
   );
 }
 
-function AgentsScreen({ agents, search, setSearch, statusFilter, setStatusFilter, sortBy, setSortBy, openAgent, openQuickAction }) {
+function AgentsScreen({ title, agents, search, setSearch, statusFilter, setStatusFilter, sortBy, setSortBy, setDirectoryTitle, openAgent, openQuickAction, emailLink }) {
   return (
     <div className="stack">
       <div className="filterCard">
         <input className="searchInput" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, agency, city, notes, tags..." />
         <div className="filterRow">
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setDirectoryTitle("Agent Directory"); }}>
             <option>All Active</option>
+            <option>Due Now</option>
+            <option>15 Day Due</option>
+            <option>30 Day Due</option>
             <option>All</option>
             {STATUS_OPTIONS.map((status) => <option key={status}>{status}</option>)}
           </select>
@@ -545,8 +603,8 @@ function AgentsScreen({ agents, search, setSearch, statusFilter, setStatusFilter
         </div>
       </div>
 
-      <Section title={`${agents.length} Agents`} subtitle="Tap any row to view the full profile and history.">
-        {agents.length === 0 ? <EmptyState text="No agents found." /> : agents.map((agent) => <AgentRow key={agent.id} agent={agent} openAgent={openAgent} openQuickAction={openQuickAction} />)}
+      <Section title={`${title || "Agent Directory"} (${agents.length})`} subtitle="Tap any row to view the full profile and history.">
+        {agents.length === 0 ? <EmptyState text="No agents found." /> : agents.map((agent) => <AgentRow key={agent.id} agent={agent} openAgent={openAgent} openQuickAction={openQuickAction} emailLink={emailLink} />)}
       </Section>
     </div>
   );
@@ -586,11 +644,11 @@ function AddAgentScreen({ agentForm, setAgentForm, saveAgent, saving, calculateN
   );
 }
 
-function PartnersScreen({ agents, openAgent, openQuickAction }) {
+function PartnersScreen({ agents, openAgent, openQuickAction, emailLink }) {
   return (
     <div className="stack">
       <Section title="Active Referral Partners" subtitle="These relationships should never be allowed to go cold.">
-        {agents.length === 0 ? <EmptyState text="No referral partners yet." /> : agents.map((agent) => <AgentRow key={agent.id} agent={agent} openAgent={openAgent} openQuickAction={openQuickAction} />)}
+        {agents.length === 0 ? <EmptyState text="No referral partners yet." /> : agents.map((agent) => <AgentRow key={agent.id} agent={agent} openAgent={openAgent} openQuickAction={openQuickAction} emailLink={emailLink} />)}
       </Section>
     </div>
   );
@@ -608,7 +666,7 @@ function PlaybookScreen() {
   );
 }
 
-function AgentRow({ agent, openAgent, openQuickAction, priority }) {
+function AgentRow({ agent, openAgent, openQuickAction, emailLink, priority }) {
   const overdue = agent.daysRemaining !== null && agent.daysRemaining < 0;
   const dueToday = agent.daysRemaining === 0;
   const daysLabel = agent.daysRemaining === null ? "No cycle" : agent.daysRemaining < 0 ? `${Math.abs(agent.daysRemaining)} days overdue` : agent.daysRemaining === 0 ? "Due today" : `${agent.daysRemaining} days left`;
@@ -625,13 +683,14 @@ function AgentRow({ agent, openAgent, openQuickAction, priority }) {
       </div>
       <div className="rowActions">
         <button onClick={() => openQuickAction(agent, "Phone Call")}>Call</button>
+        {agent.agent_email && <a className="rowEmailButton" href={emailLink(agent)}>Email</a>}
         <button onClick={() => openQuickAction(agent, "Office Stop In")}>Stop In</button>
       </div>
     </div>
   );
 }
 
-function AgentProfile({ agent, engagements, close, openQuickAction, updateStatus, archiveAgent, deleteAgent }) {
+function AgentProfile({ agent, engagements, close, openQuickAction, updateStatus, archiveAgent, deleteAgent, emailLink }) {
   const tags = parseTagsSafe(agent.tags);
   const address = [agent.address, agent.city, agent.state].filter(Boolean).join(", ");
 
@@ -658,7 +717,7 @@ function AgentProfile({ agent, engagements, close, openQuickAction, updateStatus
         <div className="quickGrid">
           {agent.agent_phone && <a href={`tel:${agent.agent_phone}`}>Call</a>}
           {agent.agent_phone && <a href={`sms:${agent.agent_phone}`}>Text</a>}
-          {agent.agent_email && <a href={`mailto:${agent.agent_email}`}>Email</a>}
+          {agent.agent_email && <a href={emailLink(agent)}>Email</a>}
           {address && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`} target="_blank" rel="noreferrer">Map</a>}
         </div>
 
@@ -830,7 +889,10 @@ h2, h3, p { margin-top: 0; }
 .message, .loadingCard { margin-top: 14px; background: rgba(15, 23, 42, .92); border: 1px solid rgba(148, 163, 184, .2); border-radius: 18px; padding: 14px; color: #cbd5e1; }
 .stack { display: flex; flex-direction: column; gap: 14px; margin-top: 14px; }
 .metricGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-.metric { background: rgba(15, 23, 42, .88); border: 1px solid rgba(148, 163, 184, .18); border-radius: 20px; padding: 14px; min-height: 80px; }
+.metric { background: rgba(15, 23, 42, .88); border: 1px solid rgba(148, 163, 184, .18); border-radius: 20px; padding: 14px; min-height: 80px; text-align: left; }
+.metricButton { cursor: pointer; color: #f8fafc; transition: transform .12s ease, border-color .12s ease; }
+.metricButton:active { transform: scale(.98); }
+.metricButton:hover { border-color: rgba(255,255,255,.35); }
 .metric span { display: block; color: #94a3b8; font-size: 12px; margin-bottom: 8px; }
 .metric strong { font-size: 28px; }
 .dangerMetric { background: rgba(127, 29, 29, .32); border-color: rgba(248, 113, 113, .35); }
@@ -848,7 +910,8 @@ h2, h3, p { margin-top: 0; }
 .muted { color: #94a3b8; font-size: 13px; margin-top: 3px; }
 .dangerText { color: #fca5a5; font-size: 13px; margin-top: 3px; font-weight: 700; }
 .rowActions { display: flex; gap: 7px; }
-.rowActions button, .quickGrid button, .quickGrid a { background: #f8fafc; color: #020617; border: none; border-radius: 14px; padding: 10px 12px; font-weight: 800; text-decoration: none; text-align: center; }
+.rowActions button, .rowActions a, .quickGrid button, .quickGrid a { background: #f8fafc; color: #020617; border: none; border-radius: 14px; padding: 10px 12px; font-weight: 800; text-decoration: none; text-align: center; }
+.rowEmailButton { display: inline-flex; align-items: center; justify-content: center; }
 .filterCard { display: flex; flex-direction: column; gap: 10px; }
 .searchInput, input, textarea, select { width: 100%; background: rgba(2, 6, 23, .8); color: #f8fafc; border: 1px solid rgba(148, 163, 184, .25); border-radius: 15px; padding: 12px; outline: none; }
 textarea { min-height: 96px; resize: vertical; }
