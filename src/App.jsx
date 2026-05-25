@@ -72,7 +72,7 @@ export default function App() {
   const [quickActionType, setQuickActionType] = useState("");
   const [engagementForm, setEngagementForm] = useState(EMPTY_ENGAGEMENT);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("All Active");
+  const [statusFilter, setStatusFilter] = useState("All");
   const [sortBy, setSortBy] = useState("Most Overdue");
   const [directoryTitle, setDirectoryTitle] = useState("Agent Directory");
 
@@ -379,7 +379,7 @@ export default function App() {
     });
   }, [agents, engagements]);
 
-  const activeAgents = enrichedAgents.filter((agent) => agent.relationship_status !== "Do Not Pursue");
+  const activeAgents = enrichedAgents.filter((agent) => (agent.relationship_status || "") !== "Do Not Pursue");
   const missionAgents = activeAgents
     .filter((agent) => agent.daysRemaining !== null && agent.daysRemaining <= 0)
     .sort((a, b) => (a.daysRemaining ?? 9999) - (b.daysRemaining ?? 9999));
@@ -392,9 +392,9 @@ export default function App() {
     const term = search.trim().toLowerCase();
 
     if (statusFilter === "All Active") {
-      list = list.filter((agent) => agent.relationship_status !== "Do Not Pursue");
+      list = list.filter((agent) => (agent.relationship_status || "") !== "Do Not Pursue");
     } else if (statusFilter === "Due Now") {
-      list = list.filter((agent) => agent.relationship_status !== "Do Not Pursue" && agent.daysRemaining !== null && agent.daysRemaining <= 0);
+      list = list.filter((agent) => (agent.relationship_status || "") !== "Do Not Pursue" && agent.daysRemaining !== null && agent.daysRemaining <= 0);
     } else if (statusFilter === "15 Day Due") {
       list = list.filter((agent) =>
         (agent.relationship_status === "Needs Follow Up" || agent.relationship_status === "New Prospect") &&
@@ -408,7 +408,7 @@ export default function App() {
         agent.daysRemaining <= 0
       );
     } else if (statusFilter !== "All") {
-      list = list.filter((agent) => agent.relationship_status === statusFilter);
+      list = list.filter((agent) => (agent.relationship_status || "") === statusFilter);
     }
 
     if (term) {
@@ -590,11 +590,11 @@ function AgentsScreen({ title, agents, search, setSearch, statusFilter, setStatu
         <input className="searchInput" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, agency, city, notes, tags..." />
         <div className="filterRow">
           <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setDirectoryTitle("Agent Directory"); }}>
+            <option>All</option>
             <option>All Active</option>
             <option>Due Now</option>
             <option>15 Day Due</option>
             <option>30 Day Due</option>
-            <option>All</option>
             {STATUS_OPTIONS.map((status) => <option key={status}>{status}</option>)}
           </select>
           <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
@@ -603,7 +603,7 @@ function AgentsScreen({ title, agents, search, setSearch, statusFilter, setStatu
         </div>
       </div>
 
-      <Section title={`${title || "Agent Directory"} (${agents.length})`} subtitle="Tap any row to view the full profile and history.">
+      <Section title={`${title || "Agent Directory"} (${agents.length})`} subtitle="Showing saved agents from Supabase. Clear search and set filter to All if something is missing.">
         {agents.length === 0 ? <EmptyState text="No agents found." /> : agents.map((agent) => <AgentRow key={agent.id} agent={agent} openAgent={openAgent} openQuickAction={openQuickAction} emailLink={emailLink} />)}
       </Section>
     </div>
