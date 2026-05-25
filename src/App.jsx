@@ -29,47 +29,49 @@ const SORT_OPTIONS = [
   "Recently Contacted"
 ];
 
-export default function App() {
-  const emptyAgentForm = {
-    agency_name: "",
-    agent_first_name: "",
-    agent_last_name: "",
-    agent_phone: "",
-    agent_email: "",
-    address: "",
-    city: "",
-    state: "TX",
-    website: "",
-    relationship_status: "Needs Follow Up",
-    preferred_contact_method: "Phone",
-    favorite_food: "",
-    birthday: "",
-    tags: "",
-    notes: "",
-    last_contact_date: "",
-    next_follow_up_date: ""
-  };
+const EMPTY_AGENT = {
+  agency_name: "",
+  agent_first_name: "",
+  agent_last_name: "",
+  agent_phone: "",
+  agent_email: "",
+  address: "",
+  city: "",
+  state: "TX",
+  website: "",
+  relationship_status: "Needs Follow Up",
+  preferred_contact_method: "Phone",
+  favorite_food: "",
+  birthday: "",
+  tags: "",
+  notes: "",
+  last_contact_date: "",
+  next_follow_up_date: ""
+};
 
+const EMPTY_ENGAGEMENT = {
+  engagement_type: "Phone Call",
+  action_taken: "",
+  notes: "",
+  outcome: "",
+  next_action: ""
+};
+
+export default function App() {
+  const [activeTab, setActiveTab] = useState("mission");
   const [agents, setAgents] = useState([]);
   const [engagements, setEngagements] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-  const [agentForm, setAgentForm] = useState(emptyAgentForm);
-  const [showAddAgent, setShowAddAgent] = useState(false);
+  const [agentForm, setAgentForm] = useState(EMPTY_AGENT);
   const [selectedAgent, setSelectedAgent] = useState(null);
   const [quickActionAgent, setQuickActionAgent] = useState(null);
   const [quickActionType, setQuickActionType] = useState("");
+  const [engagementForm, setEngagementForm] = useState(EMPTY_ENGAGEMENT);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All Active");
   const [sortBy, setSortBy] = useState("Most Overdue");
-  const [engagementForm, setEngagementForm] = useState({
-    engagement_type: "Phone Call",
-    action_taken: "",
-    notes: "",
-    outcome: "",
-    next_action: ""
-  });
 
   useEffect(() => {
     loadDashboard();
@@ -86,19 +88,18 @@ export default function App() {
   }
 
   function getFollowUpDays(status) {
+    if (status === "New Prospect") return 15;
     if (status === "Needs Follow Up") return 15;
     if (status === "Warm Relationship") return 30;
     if (status === "Active Referral Partner") return 21;
     if (status === "VIP Referral Partner") return 14;
-    if (status === "New Prospect") return 15;
     return null;
   }
 
-  function calculateNextFollowUp(status, lastContactDate) {
+  function calculateNextFollowUp(status, baseDate) {
     const days = getFollowUpDays(status);
-    if (!days) return "";
-    const baseDate = lastContactDate || todayDateString();
-    return addDays(baseDate, days);
+    if (!days) return null;
+    return addDays(baseDate || todayDateString(), days);
   }
 
   function daysUntil(dateString) {
@@ -106,11 +107,6 @@ export default function App() {
     const today = new Date(todayDateString() + "T00:00:00");
     const target = new Date(dateString + "T00:00:00");
     return Math.ceil((target - today) / (1000 * 60 * 60 * 24));
-  }
-
-  function isDue(agent) {
-    const remaining = daysUntil(agent.next_follow_up_date);
-    return remaining !== null && remaining <= 0;
   }
 
   function displayName(agent) {
@@ -122,11 +118,10 @@ export default function App() {
     return String(tags).split(",").map((tag) => tag.trim()).filter(Boolean);
   }
 
-  function calculateRelationshipScore(agent, agentEngagements = []) {
+  function scoreAgent(agent, agentEngagements = []) {
     let score = 40;
-    const remaining = daysUntil(agent.next_follow_up_date);
+    const days = daysUntil(agent.next_follow_up_date);
 
-    if (agent.relationship_status === "New Prospect") score += 0;
     if (agent.relationship_status === "Needs Follow Up") score += 5;
     if (agent.relationship_status === "Warm Relationship") score += 15;
     if (agent.relationship_status === "Active Referral Partner") score += 25;
@@ -134,18 +129,18 @@ export default function App() {
     if (agent.relationship_status === "Cold") score -= 15;
     if (agent.relationship_status === "Do Not Pursue") score = 0;
 
-    if (remaining !== null && remaining < 0) score -= Math.min(35, Math.abs(remaining));
-    if (remaining !== null && remaining >= 0 && remaining <= 7) score += 5;
+    if (days !== null && days < 0) score -= Math.min(35, Math.abs(days));
+    if (days !== null && days >= 0 && days <= 7) score += 5;
 
     score += Math.min(20, agentEngagements.length * 4);
-    score += Math.min(25, (agent.referral_count || 0) * 10);
+    score += Math.min(25, Number(agent.referral_count || 0) * 10);
 
     if (agent.last_contact_date) {
       const today = new Date(todayDateString() + "T00:00:00");
       const last = new Date(agent.last_contact_date + "T00:00:00");
-      const daysSinceContact = Math.ceil((today - last) / (1000 * 60 * 60 * 24));
-      if (daysSinceContact <= 7) score += 10;
-      if (daysSinceContact > 45) score -= 15;
+      const daysSince = Math.ceil((today - last) / (1000 * 60 * 60 * 24));
+      if (daysSince <= 7) score += 10;
+      if (daysSince > 45) score -= 15;
     }
 
     return Math.max(0, Math.min(100, score));
@@ -161,7 +156,7 @@ export default function App() {
       .order("next_follow_up_date", { ascending: true, nullsFirst: false });
 
     if (agentError) {
-      setMessage("Error loading agents: " + agentError.message);
+      setMessage("Database error loading agents: " + agentError.message);
       setLoading(false);
       return;
     }
@@ -172,13 +167,13 @@ export default function App() {
       .order("engagement_date", { ascending: false });
 
     if (engagementError) {
-      setMessage("Error loading engagements: " + engagementError.message);
+      setMessage("Database error loading engagement history: " + engagementError.message);
     }
 
     const grouped = {};
-    (engagementData || []).forEach((engagement) => {
-      if (!grouped[engagement.agency_id]) grouped[engagement.agency_id] = [];
-      grouped[engagement.agency_id].push(engagement);
+    (engagementData || []).forEach((item) => {
+      if (!grouped[item.agency_id]) grouped[item.agency_id] = [];
+      grouped[item.agency_id].push(item);
     });
 
     setAgents(agentData || []);
@@ -186,7 +181,7 @@ export default function App() {
     setLoading(false);
   }
 
-  async function addAgent(e) {
+  async function saveAgent(e) {
     e.preventDefault();
     setMessage("");
 
@@ -202,26 +197,24 @@ export default function App() {
 
     setSaving(true);
 
-    const lastDate = agentForm.last_contact_date || todayDateString();
-    const nextDate = agentForm.next_follow_up_date || calculateNextFollowUp(agentForm.relationship_status, lastDate);
+    const lastDate = agentForm.last_contact_date || null;
+    const nextDate = agentForm.next_follow_up_date || calculateNextFollowUp(agentForm.relationship_status, lastDate || todayDateString());
 
     const payload = {
       ...agentForm,
-      last_contact_date: agentForm.last_contact_date || null,
-      next_follow_up_date: nextDate || null,
-      is_active_referral_partner:
-        agentForm.relationship_status === "Active Referral Partner" ||
-        agentForm.relationship_status === "VIP Referral Partner"
+      last_contact_date: lastDate,
+      next_follow_up_date: nextDate,
+      is_active_referral_partner: agentForm.relationship_status === "Active Referral Partner" || agentForm.relationship_status === "VIP Referral Partner"
     };
 
     const { error } = await supabase.from("agencies").insert([payload]);
 
     if (error) {
-      setMessage("Error saving agent: " + error.message);
+      setMessage("Save failed: " + error.message);
     } else {
-      setMessage("Agent saved successfully.");
-      setAgentForm(emptyAgentForm);
-      setShowAddAgent(false);
+      setMessage("Agent saved.");
+      setAgentForm(EMPTY_AGENT);
+      setActiveTab("agents");
       await loadDashboard();
     }
 
@@ -242,20 +235,21 @@ export default function App() {
 
   async function saveEngagement(e) {
     e.preventDefault();
-    if (!quickActionAgent) return;
+    setMessage("");
 
+    if (!quickActionAgent) return;
     if (!engagementForm.notes.trim()) {
-      setMessage("Engagement notes are required. Future you will thank current you.");
+      setMessage("Notes are required for an engagement.");
       return;
     }
 
     setSaving(true);
-    setMessage("");
 
     const today = todayDateString();
-    const nextDate = calculateNextFollowUp(quickActionAgent.relationship_status, today);
+    const statusAfterReferral = engagementForm.engagement_type === "Referral Received" ? "Active Referral Partner" : quickActionAgent.relationship_status;
+    const nextDate = calculateNextFollowUp(statusAfterReferral, today);
 
-    const payload = {
+    const engagementPayload = {
       agency_id: quickActionAgent.id,
       engagement_type: engagementForm.engagement_type,
       engagement_date: today,
@@ -265,93 +259,89 @@ export default function App() {
       next_action: engagementForm.next_action
     };
 
-    const { error: engagementError } = await supabase.from("engagements").insert([payload]);
+    const { error: engagementError } = await supabase.from("engagements").insert([engagementPayload]);
 
     if (engagementError) {
-      setMessage("Error saving engagement: " + engagementError.message);
+      setMessage("Engagement save failed: " + engagementError.message);
       setSaving(false);
       return;
     }
 
     const updates = {
       last_contact_date: today,
-      next_follow_up_date: nextDate || null,
+      next_follow_up_date: nextDate,
       last_engagement_type: engagementForm.engagement_type,
-      engagement_count: (quickActionAgent.engagement_count || 0) + 1
+      engagement_count: Number(quickActionAgent.engagement_count || 0) + 1
     };
 
     if (engagementForm.engagement_type === "Referral Received") {
-      updates.referral_count = (quickActionAgent.referral_count || 0) + 1;
-      updates.last_referral_date = today;
       updates.relationship_status = "Active Referral Partner";
       updates.is_active_referral_partner = true;
-      updates.next_follow_up_date = calculateNextFollowUp("Active Referral Partner", today);
+      updates.referral_count = Number(quickActionAgent.referral_count || 0) + 1;
+      updates.last_referral_date = today;
     }
 
-    const { error: agentError } = await supabase
-      .from("agencies")
-      .update(updates)
-      .eq("id", quickActionAgent.id);
+    const { error: updateError } = await supabase.from("agencies").update(updates).eq("id", quickActionAgent.id);
 
-    if (agentError) {
-      setMessage("Engagement saved, but agent update failed: " + agentError.message);
+    if (updateError) {
+      setMessage("Engagement saved, but agent update failed: " + updateError.message);
     } else {
-      setMessage("Engagement logged successfully.");
+      setMessage("Engagement logged.");
     }
 
     setQuickActionAgent(null);
     setQuickActionType("");
+    setEngagementForm(EMPTY_ENGAGEMENT);
     setSaving(false);
     await loadDashboard();
   }
 
-  async function updateStatus(agent, newStatus) {
+  async function updateStatus(agent, status) {
     const baseDate = agent.last_contact_date || todayDateString();
-    const nextDate = calculateNextFollowUp(newStatus, baseDate);
+    const nextDate = calculateNextFollowUp(status, baseDate);
 
     const { error } = await supabase
       .from("agencies")
       .update({
-        relationship_status: newStatus,
-        is_active_referral_partner:
-          newStatus === "Active Referral Partner" || newStatus === "VIP Referral Partner",
-        next_follow_up_date: nextDate || null
+        relationship_status: status,
+        next_follow_up_date: nextDate,
+        is_active_referral_partner: status === "Active Referral Partner" || status === "VIP Referral Partner"
       })
       .eq("id", agent.id);
 
     if (error) {
-      setMessage("Error updating status: " + error.message);
+      setMessage("Status update failed: " + error.message);
     } else {
       setMessage("Status updated.");
       await loadDashboard();
     }
   }
 
-  async function moveToDoNotPursue(agent) {
-    const confirmMove = window.confirm("Move this agent to Do Not Pursue? They will leave your active dashboard but remain stored.");
-    if (!confirmMove) return;
+  async function archiveAgent(agent) {
+    if (!window.confirm("Move this agent to Do Not Pursue?")) return;
 
     const { error } = await supabase
       .from("agencies")
       .update({ relationship_status: "Do Not Pursue", next_follow_up_date: null })
       .eq("id", agent.id);
 
-    if (error) setMessage("Error moving agent: " + error.message);
+    if (error) setMessage("Archive failed: " + error.message);
     else {
-      setMessage("Agent moved to Do Not Pursue.");
+      setMessage("Moved to Do Not Pursue.");
+      setSelectedAgent(null);
       await loadDashboard();
     }
   }
 
   async function deleteAgent(agent) {
-    const confirmDelete = window.confirm("Delete this agent permanently? This removes their history too.");
-    if (!confirmDelete) return;
+    if (!window.confirm("Delete this agent permanently? This removes their history too.")) return;
 
     const { error } = await supabase.from("agencies").delete().eq("id", agent.id);
 
-    if (error) setMessage("Error deleting agent: " + error.message);
+    if (error) setMessage("Delete failed: " + error.message);
     else {
       setMessage("Agent deleted.");
+      setSelectedAgent(null);
       await loadDashboard();
     }
   }
@@ -361,542 +351,463 @@ export default function App() {
       const agentEngagements = engagements[agent.id] || [];
       return {
         ...agent,
-        score: calculateRelationshipScore(agent, agentEngagements),
-        agentEngagements,
+        name: displayName(agent),
+        history: agentEngagements,
+        score: scoreAgent(agent, agentEngagements),
         daysRemaining: daysUntil(agent.next_follow_up_date)
       };
     });
   }, [agents, engagements]);
 
   const activeAgents = enrichedAgents.filter((agent) => agent.relationship_status !== "Do Not Pursue");
-
   const missionAgents = activeAgents
-    .filter((agent) => isDue(agent))
-    .sort((a, b) => (a.daysRemaining || 0) - (b.daysRemaining || 0));
-
-  const needsFollowUp = activeAgents.filter((agent) => agent.relationship_status === "Needs Follow Up");
+    .filter((agent) => agent.daysRemaining !== null && agent.daysRemaining <= 0)
+    .sort((a, b) => (a.daysRemaining ?? 9999) - (b.daysRemaining ?? 9999));
+  const followUpAgents = activeAgents.filter((agent) => agent.relationship_status === "Needs Follow Up" || agent.relationship_status === "New Prospect");
   const warmAgents = activeAgents.filter((agent) => agent.relationship_status === "Warm Relationship");
-  const referralPartners = activeAgents.filter(
-    (agent) =>
-      agent.relationship_status === "Active Referral Partner" ||
-      agent.relationship_status === "VIP Referral Partner" ||
-      agent.is_active_referral_partner
-  );
+  const partnerAgents = activeAgents.filter((agent) => agent.relationship_status === "Active Referral Partner" || agent.relationship_status === "VIP Referral Partner" || agent.is_active_referral_partner);
 
   const directoryAgents = useMemo(() => {
-    let results = [...enrichedAgents];
-    const term = search.toLowerCase().trim();
+    let list = [...enrichedAgents];
+    const term = search.trim().toLowerCase();
 
     if (statusFilter === "All Active") {
-      results = results.filter((agent) => agent.relationship_status !== "Do Not Pursue");
+      list = list.filter((agent) => agent.relationship_status !== "Do Not Pursue");
     } else if (statusFilter !== "All") {
-      results = results.filter((agent) => agent.relationship_status === statusFilter);
+      list = list.filter((agent) => agent.relationship_status === statusFilter);
     }
 
     if (term) {
-      results = results.filter((agent) => {
-        const haystack = [
-          displayName(agent),
-          agent.agency_name,
-          agent.agent_phone,
-          agent.agent_email,
-          agent.city,
-          agent.tags,
-          agent.notes,
-          agent.favorite_food
-        ]
+      list = list.filter((agent) => {
+        const text = [agent.name, agent.agency_name, agent.agent_phone, agent.agent_email, agent.city, agent.tags, agent.notes, agent.favorite_food]
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
-        return haystack.includes(term);
+        return text.includes(term);
       });
     }
 
-    if (sortBy === "Most Overdue") {
-      results.sort((a, b) => (a.daysRemaining ?? 9999) - (b.daysRemaining ?? 9999));
-    }
-    if (sortBy === "Highest Score") {
-      results.sort((a, b) => b.score - a.score);
-    }
-    if (sortBy === "Lowest Score") {
-      results.sort((a, b) => a.score - b.score);
-    }
-    if (sortBy === "Name A-Z") {
-      results.sort((a, b) => displayName(a).localeCompare(displayName(b)));
-    }
-    if (sortBy === "Recently Contacted") {
-      results.sort((a, b) => String(b.last_contact_date || "").localeCompare(String(a.last_contact_date || "")));
-    }
+    if (sortBy === "Most Overdue") list.sort((a, b) => (a.daysRemaining ?? 9999) - (b.daysRemaining ?? 9999));
+    if (sortBy === "Highest Score") list.sort((a, b) => b.score - a.score);
+    if (sortBy === "Lowest Score") list.sort((a, b) => a.score - b.score);
+    if (sortBy === "Name A-Z") list.sort((a, b) => a.name.localeCompare(b.name));
+    if (sortBy === "Recently Contacted") list.sort((a, b) => String(b.last_contact_date || "").localeCompare(String(a.last_contact_date || "")));
 
-    return results;
+    return list;
   }, [enrichedAgents, search, statusFilter, sortBy]);
 
-  const topPriorityAgents = missionAgents.slice(0, 5);
-
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
-        <header className="bg-slate-900 border border-slate-800 rounded-3xl p-5 md:p-6 shadow-xl sticky top-2 z-20">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div>
-              <p className="text-sm uppercase tracking-widest text-slate-400">Roofing Relationship OS</p>
-              <h1 className="text-3xl md:text-5xl font-bold mt-1">Avalanche CRM</h1>
-              <p className="text-slate-400 mt-2 max-w-3xl">
-                Open the app, see who matters today, log the engagement, keep the relationship warm.
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => setShowAddAgent(true)} className="bg-white text-slate-950 px-4 py-3 rounded-2xl font-bold">
-                Add Agent
-              </button>
-              <button onClick={loadDashboard} className="bg-slate-800 border border-slate-700 px-4 py-3 rounded-2xl font-bold">
-                Refresh
-              </button>
-            </div>
-          </div>
-        </header>
+    <div className="appShell">
+      <style>{styles}</style>
 
-        {message && (
-          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4 text-sm">
-            {message}
-          </div>
+      <main className="screen">
+        <Header activeTab={activeTab} onRefresh={loadDashboard} />
+        {message && <div className="message">{message}</div>}
+        {loading && <div className="loadingCard">Loading Avalanche CRM...</div>}
+
+        {!loading && activeTab === "mission" && (
+          <MissionScreen
+            missionAgents={missionAgents}
+            followUpAgents={followUpAgents}
+            warmAgents={warmAgents}
+            partnerAgents={partnerAgents}
+            openQuickAction={openQuickAction}
+            openAgent={setSelectedAgent}
+          />
         )}
 
-        <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-          <MetricCard label="Today's Mission" value={missionAgents.length} tone="urgent" />
-          <MetricCard label="Needs Follow Up" value={needsFollowUp.length} />
-          <MetricCard label="Warm" value={warmAgents.length} />
-          <MetricCard label="Referral Partners" value={referralPartners.length} />
-        </section>
+        {!loading && activeTab === "agents" && (
+          <AgentsScreen
+            agents={directoryAgents}
+            search={search}
+            setSearch={setSearch}
+            statusFilter={statusFilter}
+            setStatusFilter={setStatusFilter}
+            sortBy={sortBy}
+            setSortBy={setSortBy}
+            openAgent={setSelectedAgent}
+            openQuickAction={openQuickAction}
+          />
+        )}
 
-        <section className="bg-red-950/40 border border-red-800 rounded-3xl p-5 shadow-xl">
-          <div className="mb-4">
-            <h2 className="text-2xl font-bold">Today's Mission</h2>
-            <p className="text-red-200 text-sm">The people you should touch today, sorted by urgency.</p>
-          </div>
+        {!loading && activeTab === "add" && (
+          <AddAgentScreen
+            agentForm={agentForm}
+            setAgentForm={setAgentForm}
+            saveAgent={saveAgent}
+            saving={saving}
+            calculateNextFollowUp={calculateNextFollowUp}
+            todayDateString={todayDateString}
+          />
+        )}
 
-          {loading ? (
-            <p className="text-slate-300">Loading dashboard...</p>
-          ) : topPriorityAgents.length === 0 ? (
-            <div className="bg-slate-900/60 rounded-2xl p-4 text-slate-300">
-              No overdue follow-ups right now. That is the sound of a system actually working.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {topPriorityAgents.map((agent) => (
-                <MissionRow key={agent.id} agent={agent} onQuickAction={openQuickAction} onSelect={setSelectedAgent} />
-              ))}
-            </div>
-          )}
-        </section>
+        {!loading && activeTab === "partners" && (
+          <PartnersScreen
+            agents={partnerAgents}
+            openAgent={setSelectedAgent}
+            openQuickAction={openQuickAction}
+          />
+        )}
 
-        <section className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-          <div className="xl:col-span-1 space-y-6">
-            <SmartPlaybook />
-            <AgentSection title="Warm Relationships" subtitle="30-day keep-warm cycle" agents={warmAgents.slice(0, 6)} engagements={engagements} onQuickAction={openQuickAction} onStatusChange={updateStatus} onArchive={moveToDoNotPursue} onDelete={deleteAgent} onSelect={setSelectedAgent} />
-          </div>
+        {!loading && activeTab === "playbook" && <PlaybookScreen />}
+      </main>
 
-          <div className="xl:col-span-2 space-y-6">
-            <AgentDirectory
-              agents={directoryAgents}
-              search={search}
-              setSearch={setSearch}
-              statusFilter={statusFilter}
-              setStatusFilter={setStatusFilter}
-              sortBy={sortBy}
-              setSortBy={setSortBy}
-              onSelect={setSelectedAgent}
-              onQuickAction={openQuickAction}
-            />
-            <AgentSection title="Active Referral Partners" subtitle="People who can turn relationship work into jobs" agents={referralPartners.slice(0, 6)} engagements={engagements} onQuickAction={openQuickAction} onStatusChange={updateStatus} onArchive={moveToDoNotPursue} onDelete={deleteAgent} onSelect={setSelectedAgent} />
-          </div>
-        </section>
-      </div>
+      <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
 
-      {showAddAgent && (
-        <Modal title="Add Insurance Agent" onClose={() => setShowAddAgent(false)}>
-          <AgentForm agentForm={agentForm} setAgentForm={setAgentForm} addAgent={addAgent} saving={saving} calculateNextFollowUp={calculateNextFollowUp} todayDateString={todayDateString} />
-        </Modal>
+      {selectedAgent && (
+        <AgentProfile
+          agent={selectedAgent}
+          engagements={engagements[selectedAgent.id] || []}
+          close={() => setSelectedAgent(null)}
+          openQuickAction={openQuickAction}
+          updateStatus={updateStatus}
+          archiveAgent={archiveAgent}
+          deleteAgent={deleteAgent}
+        />
       )}
 
       {quickActionAgent && (
-        <Modal title={`${quickActionType}: ${displayName(quickActionAgent)}`} onClose={() => setQuickActionAgent(null)}>
-          <form onSubmit={saveEngagement} className="space-y-4">
-            {quickActionType === "Office Stop In" && (
-              <Select label="Action Taken" value={engagementForm.action_taken} options={OFFICE_ACTIONS} onChange={(value) => setEngagementForm({ ...engagementForm, action_taken: value })} />
-            )}
-
-            {quickActionType !== "Office Stop In" && quickActionType !== "Phone Call" && (
-              <Input label="Action Taken" value={engagementForm.action_taken} onChange={(value) => setEngagementForm({ ...engagementForm, action_taken: value })} placeholder="Short label for what happened" />
-            )}
-
-            <Textarea label="Engagement Notes" value={engagementForm.notes} onChange={(value) => setEngagementForm({ ...engagementForm, notes: value })} placeholder="What happened? Who was there? What did you learn?" required />
-            <Textarea label="Outcome" value={engagementForm.outcome} onChange={(value) => setEngagementForm({ ...engagementForm, outcome: value })} placeholder="Warmer? Neutral? Needs another touch?" />
-            <Input label="Next Action" value={engagementForm.next_action} onChange={(value) => setEngagementForm({ ...engagementForm, next_action: value })} placeholder="Example: stop by next month with coffee" />
-
-            <button disabled={saving} className="w-full bg-white text-slate-950 py-3 rounded-2xl font-bold disabled:opacity-50">
-              {saving ? "Saving..." : "Save Engagement"}
-            </button>
-          </form>
-        </Modal>
-      )}
-
-      {selectedAgent && (
-        <AgentProfileModal
-          agent={selectedAgent}
-          engagements={engagements[selectedAgent.id] || []}
-          onClose={() => setSelectedAgent(null)}
-          onQuickAction={openQuickAction}
-          onStatusChange={updateStatus}
-          onArchive={moveToDoNotPursue}
-          onDelete={deleteAgent}
+        <EngagementModal
+          agent={quickActionAgent}
+          actionType={quickActionType}
+          form={engagementForm}
+          setForm={setEngagementForm}
+          saving={saving}
+          saveEngagement={saveEngagement}
+          close={() => setQuickActionAgent(null)}
         />
       )}
     </div>
   );
 }
 
-function AgentForm({ agentForm, setAgentForm, addAgent, saving, calculateNextFollowUp, todayDateString }) {
+function Header({ activeTab, onRefresh }) {
+  const titles = {
+    mission: "Today's Mission",
+    agents: "Agent Directory",
+    add: "Add Agent",
+    partners: "Referral Partners",
+    playbook: "Playbook"
+  };
+
   return (
-    <form onSubmit={addAgent} className="space-y-3">
+    <div className="topHeader">
+      <div>
+        <div className="eyebrow">Avalanche CRM</div>
+        <h1>{titles[activeTab]}</h1>
+      </div>
+      <button className="ghostButton" onClick={onRefresh}>Refresh</button>
+    </div>
+  );
+}
+
+function MissionScreen({ missionAgents, followUpAgents, warmAgents, partnerAgents, openQuickAction, openAgent }) {
+  return (
+    <div className="stack">
+      <div className="metricGrid">
+        <Metric label="Due Today" value={missionAgents.length} danger />
+        <Metric label="15-Day" value={followUpAgents.length} />
+        <Metric label="Warm" value={warmAgents.length} />
+        <Metric label="Partners" value={partnerAgents.length} />
+      </div>
+
+      <Section title="Priority Calls" subtitle="These are the relationships that need oxygen first.">
+        {missionAgents.length === 0 ? (
+          <EmptyState text="No overdue follow-ups. The machine is clean right now." />
+        ) : (
+          missionAgents.slice(0, 12).map((agent) => (
+            <AgentRow key={agent.id} agent={agent} openAgent={openAgent} openQuickAction={openQuickAction} priority />
+          ))
+        )}
+      </Section>
+
+      <Section title="Warm Relationship Watch" subtitle="Keep these alive before they go cold.">
+        {warmAgents.length === 0 ? <EmptyState text="No warm relationships yet." /> : warmAgents.slice(0, 6).map((agent) => <AgentRow key={agent.id} agent={agent} openAgent={openAgent} openQuickAction={openQuickAction} />)}
+      </Section>
+    </div>
+  );
+}
+
+function AgentsScreen({ agents, search, setSearch, statusFilter, setStatusFilter, sortBy, setSortBy, openAgent, openQuickAction }) {
+  return (
+    <div className="stack">
+      <div className="filterCard">
+        <input className="searchInput" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, agency, city, notes, tags..." />
+        <div className="filterRow">
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option>All Active</option>
+            <option>All</option>
+            {STATUS_OPTIONS.map((status) => <option key={status}>{status}</option>)}
+          </select>
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+            {SORT_OPTIONS.map((item) => <option key={item}>{item}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <Section title={`${agents.length} Agents`} subtitle="Tap any row to view the full profile and history.">
+        {agents.length === 0 ? <EmptyState text="No agents found." /> : agents.map((agent) => <AgentRow key={agent.id} agent={agent} openAgent={openAgent} openQuickAction={openQuickAction} />)}
+      </Section>
+    </div>
+  );
+}
+
+function AddAgentScreen({ agentForm, setAgentForm, saveAgent, saving, calculateNextFollowUp, todayDateString }) {
+  return (
+    <form className="formCard" onSubmit={saveAgent}>
       <Input label="Agency Name" value={agentForm.agency_name} onChange={(value) => setAgentForm({ ...agentForm, agency_name: value })} required />
-      <div className="grid grid-cols-2 gap-3">
+      <div className="twoCol">
         <Input label="First Name" value={agentForm.agent_first_name} onChange={(value) => setAgentForm({ ...agentForm, agent_first_name: value })} />
         <Input label="Last Name" value={agentForm.agent_last_name} onChange={(value) => setAgentForm({ ...agentForm, agent_last_name: value })} />
       </div>
       <Input label="Cell / Phone" value={agentForm.agent_phone} onChange={(value) => setAgentForm({ ...agentForm, agent_phone: value })} />
       <Input label="Email" value={agentForm.agent_email} onChange={(value) => setAgentForm({ ...agentForm, agent_email: value })} />
       <Input label="Address" value={agentForm.address} onChange={(value) => setAgentForm({ ...agentForm, address: value })} />
-      <div className="grid grid-cols-2 gap-3">
+      <div className="twoCol">
         <Input label="City" value={agentForm.city} onChange={(value) => setAgentForm({ ...agentForm, city: value })} />
         <Input label="State" value={agentForm.state} onChange={(value) => setAgentForm({ ...agentForm, state: value })} />
       </div>
       <Select
-        label="Relationship Status"
+        label="Status"
         value={agentForm.relationship_status}
         options={STATUS_OPTIONS}
-        onChange={(value) =>
-          setAgentForm({
-            ...agentForm,
-            relationship_status: value,
-            next_follow_up_date: calculateNextFollowUp(value, agentForm.last_contact_date || todayDateString())
-          })
-        }
+        onChange={(value) => setAgentForm({ ...agentForm, relationship_status: value, next_follow_up_date: calculateNextFollowUp(value, agentForm.last_contact_date || todayDateString()) || "" })}
       />
-      <div className="grid grid-cols-2 gap-3">
-        <Input label="Last Contact" type="date" value={agentForm.last_contact_date} onChange={(value) => setAgentForm({ ...agentForm, last_contact_date: value, next_follow_up_date: calculateNextFollowUp(agentForm.relationship_status, value) })} />
+      <div className="twoCol">
+        <Input label="Last Contact" type="date" value={agentForm.last_contact_date} onChange={(value) => setAgentForm({ ...agentForm, last_contact_date: value, next_follow_up_date: calculateNextFollowUp(agentForm.relationship_status, value) || "" })} />
         <Input label="Next Follow Up" type="date" value={agentForm.next_follow_up_date} onChange={(value) => setAgentForm({ ...agentForm, next_follow_up_date: value })} />
       </div>
-      <Input label="Favorite Food / Drink" value={agentForm.favorite_food} onChange={(value) => setAgentForm({ ...agentForm, favorite_food: value })} />
+      <Input label="Favorite Food / Drink" value={agentForm.favorite_food} onChange={(value) => setAgentForm({ ...agentForm, favorite_food: value })} placeholder="Tacos, coffee, Diet Coke..." />
       <Input label="Birthday" value={agentForm.birthday} onChange={(value) => setAgentForm({ ...agentForm, birthday: value })} />
-      <Input label="Tags" value={agentForm.tags} onChange={(value) => setAgentForm({ ...agentForm, tags: value })} placeholder="Likes tacos, responds to text, gatekeeper matters" />
-      <Textarea label="Memory Notes" value={agentForm.notes} onChange={(value) => setAgentForm({ ...agentForm, notes: value })} placeholder="Personal details, preferences, family, gatekeeper, relationship context." />
-      <button disabled={saving} className="w-full bg-white text-slate-950 py-3 rounded-2xl font-bold disabled:opacity-50">
-        {saving ? "Saving..." : "Save Agent"}
-      </button>
+      <Input label="Tags" value={agentForm.tags} onChange={(value) => setAgentForm({ ...agentForm, tags: value })} placeholder="Responds to text, gatekeeper matters" />
+      <Textarea label="Memory Notes" value={agentForm.notes} onChange={(value) => setAgentForm({ ...agentForm, notes: value })} placeholder="Personal details, preferences, relationship context." />
+      <button className="primaryButton" disabled={saving}>{saving ? "Saving..." : "Save Agent"}</button>
     </form>
   );
 }
 
-function MissionRow({ agent, onQuickAction, onSelect }) {
-  const overdueText = agent.daysRemaining < 0 ? `${Math.abs(agent.daysRemaining)} days overdue` : "Due today";
+function PartnersScreen({ agents, openAgent, openQuickAction }) {
   return (
-    <div className="bg-slate-900 border border-red-800 rounded-2xl p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-      <div onClick={() => onSelect(agent)} className="cursor-pointer">
-        <p className="text-xl font-bold">{[agent.agent_first_name, agent.agent_last_name].filter(Boolean).join(" ") || agent.agency_name}</p>
-        <p className="text-slate-300">{agent.agency_name}</p>
-        <p className="text-red-300 font-semibold">{overdueText}</p>
-      </div>
-      <div className="grid grid-cols-2 md:flex gap-2">
-        <QuickButton label="Call" onClick={() => onQuickAction(agent, "Phone Call")} />
-        <QuickButton label="Stop In" onClick={() => onQuickAction(agent, "Office Stop In")} />
-        <QuickButton label="Referral Ask" onClick={() => onQuickAction(agent, "Referral Request")} />
-        <QuickButton label="Open" onClick={() => onSelect(agent)} dark />
-      </div>
+    <div className="stack">
+      <Section title="Active Referral Partners" subtitle="These relationships should never be allowed to go cold.">
+        {agents.length === 0 ? <EmptyState text="No referral partners yet." /> : agents.map((agent) => <AgentRow key={agent.id} agent={agent} openAgent={openAgent} openQuickAction={openQuickAction} />)}
+      </Section>
     </div>
   );
 }
 
-function AgentDirectory({ agents, search, setSearch, statusFilter, setStatusFilter, sortBy, setSortBy, onSelect, onQuickAction }) {
+function PlaybookScreen() {
   return (
-    <section className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl">
-      <div className="mb-4">
-        <h2 className="text-2xl font-bold">Agent Directory</h2>
-        <p className="text-slate-400 text-sm">Search, filter, then click one agent to see the full relationship history.</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search name, agency, tag, city, notes..."
-          className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-3 text-slate-100 md:col-span-1"
-        />
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-3 text-slate-100">
-          <option>All Active</option>
-          <option>All</option>
-          {STATUS_OPTIONS.map((status) => <option key={status}>{status}</option>)}
-        </select>
-        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-3 text-slate-100">
-          {SORT_OPTIONS.map((option) => <option key={option}>{option}</option>)}
-        </select>
-      </div>
-
-      <div className="space-y-2 max-h-[650px] overflow-y-auto pr-1">
-        {agents.length === 0 ? (
-          <div className="bg-slate-800 rounded-2xl p-4 text-slate-400">No agents match this search.</div>
-        ) : (
-          agents.map((agent) => (
-            <DirectoryRow key={agent.id} agent={agent} onSelect={onSelect} onQuickAction={onQuickAction} />
-          ))
-        )}
-      </div>
-    </section>
+    <div className="stack">
+      <Play title="New Prospect" text="Do not ask for business too soon. Make the first touch about usefulness, speed, and professionalism." />
+      <Play title="Needs Follow Up" text="15-day cadence. Call or stop in. Learn one useful detail and log it." />
+      <Play title="Office Stop In" text="Best for relationship building. Coffee, tacos, marketing drop, or meeting new staff should be logged as an action." />
+      <Play title="Warm Relationship" text="30-day cadence. Keep familiarity alive. You are training them to remember your name when a claim call happens." />
+      <Play title="Referral Partner" text="Protect the relationship. Thank them quickly, follow up professionally, and eventually sync the lead into JobNimbus." />
+    </div>
   );
 }
 
-function DirectoryRow({ agent, onSelect, onQuickAction }) {
+function AgentRow({ agent, openAgent, openQuickAction, priority }) {
   const overdue = agent.daysRemaining !== null && agent.daysRemaining < 0;
+  const dueToday = agent.daysRemaining === 0;
+  const daysLabel = agent.daysRemaining === null ? "No cycle" : agent.daysRemaining < 0 ? `${Math.abs(agent.daysRemaining)} days overdue` : agent.daysRemaining === 0 ? "Due today" : `${agent.daysRemaining} days left`;
+
   return (
-    <div className={`rounded-2xl border p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3 ${overdue ? "bg-red-900/30 border-red-700" : "bg-slate-800 border-slate-700"}`}>
-      <div onClick={() => onSelect(agent)} className="cursor-pointer flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="font-bold text-lg">{[agent.agent_first_name, agent.agent_last_name].filter(Boolean).join(" ") || agent.agency_name}</p>
-          <span className="text-xs bg-slate-950 border border-slate-700 rounded-full px-2 py-1">{agent.relationship_status || "No Status"}</span>
-          <span className="text-xs bg-slate-950 border border-slate-700 rounded-full px-2 py-1">Score {agent.score}</span>
+    <div className={`agentRow ${overdue || dueToday || priority ? "urgentRow" : ""}`}>
+      <div className="agentMain" onClick={() => openAgent(agent)}>
+        <div className="rowTop">
+          <strong>{agent.name}</strong>
+          <span className="scorePill">{agent.score}</span>
         </div>
-        <p className="text-slate-300 text-sm">{agent.agency_name}</p>
-        <p className={`text-sm ${overdue ? "text-red-300" : "text-slate-400"}`}>
-          {agent.daysRemaining === null ? "No follow-up cycle" : agent.daysRemaining < 0 ? `${Math.abs(agent.daysRemaining)} days overdue` : `${agent.daysRemaining} days until follow-up`}
-          {agent.last_contact_date ? ` • Last: ${agent.last_contact_date}` : " • No last contact"}
-        </p>
+        <div className="muted">{agent.agency_name}</div>
+        <div className={overdue || dueToday ? "dangerText" : "muted"}>{daysLabel} · {agent.relationship_status || "No status"}</div>
       </div>
-      <div className="flex gap-2">
-        <QuickButton label="Call" onClick={() => onQuickAction(agent, "Phone Call")} />
-        <QuickButton label="Open" onClick={() => onSelect(agent)} dark />
+      <div className="rowActions">
+        <button onClick={() => openQuickAction(agent, "Phone Call")}>Call</button>
+        <button onClick={() => openQuickAction(agent, "Office Stop In")}>Stop In</button>
       </div>
     </div>
   );
 }
 
-function AgentSection({ title, subtitle, agents, engagements, onQuickAction, onStatusChange, onArchive, onDelete, onSelect }) {
-  return (
-    <section className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl">
-      <div className="mb-4">
-        <h2 className="text-2xl font-bold">{title}</h2>
-        <p className="text-slate-400 text-sm">{subtitle}</p>
-      </div>
-      {agents.length === 0 ? (
-        <div className="bg-slate-800 rounded-2xl p-4 text-slate-400">No agents in this section yet.</div>
-      ) : (
-        <div className="space-y-3">
-          {agents.map((agent) => (
-            <MiniAgentCard key={agent.id} agent={agent} engagements={engagements[agent.id] || []} onQuickAction={onQuickAction} onStatusChange={onStatusChange} onArchive={onArchive} onDelete={onDelete} onSelect={onSelect} />
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function MiniAgentCard({ agent, onQuickAction, onStatusChange, onSelect }) {
-  const overdue = agent.daysRemaining !== null && agent.daysRemaining < 0;
-  return (
-    <div className={`rounded-2xl border p-4 ${overdue ? "bg-red-900/30 border-red-700" : "bg-slate-800 border-slate-700"}`}>
-      <div className="flex justify-between gap-3">
-        <div onClick={() => onSelect(agent)} className="cursor-pointer">
-          <p className="font-bold text-lg">{[agent.agent_first_name, agent.agent_last_name].filter(Boolean).join(" ") || agent.agency_name}</p>
-          <p className="text-slate-300 text-sm">{agent.agency_name}</p>
-          <p className={`text-sm ${overdue ? "text-red-300" : "text-slate-400"}`}>
-            {agent.daysRemaining === null ? "No follow-up" : agent.daysRemaining < 0 ? `${Math.abs(agent.daysRemaining)} days overdue` : `${agent.daysRemaining} days left`}
-          </p>
-        </div>
-        <div className="text-right">
-          <p className="font-bold text-xl">{agent.score}</p>
-          <p className="text-xs text-slate-400">score</p>
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-2 mt-3">
-        <QuickButton label="Call" onClick={() => onQuickAction(agent, "Phone Call")} />
-        <QuickButton label="Stop In" onClick={() => onQuickAction(agent, "Office Stop In")} />
-      </div>
-      <select value={agent.relationship_status || "New Prospect"} onChange={(e) => onStatusChange(agent, e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 mt-3 text-sm">
-        {STATUS_OPTIONS.map((status) => <option key={status}>{status}</option>)}
-      </select>
-    </div>
-  );
-}
-
-function AgentProfileModal({ agent, engagements, onClose, onQuickAction, onStatusChange, onArchive, onDelete }) {
-  const addressText = [agent.address, agent.city, agent.state].filter(Boolean).join(", ");
+function AgentProfile({ agent, engagements, close, openQuickAction, updateStatus, archiveAgent, deleteAgent }) {
   const tags = parseTagsSafe(agent.tags);
+  const address = [agent.address, agent.city, agent.state].filter(Boolean).join(", ");
+
   return (
-    <Modal title={`${[agent.agent_first_name, agent.agent_last_name].filter(Boolean).join(" ") || agent.agency_name}`} onClose={onClose}>
-      <div className="space-y-5">
-        <div className="bg-slate-800 rounded-2xl p-4">
-          <p className="text-slate-400">{agent.agency_name}</p>
-          <div className="grid grid-cols-2 gap-3 mt-4">
-            <Info label="Score" value={agent.score} />
-            <Info label="Referrals" value={agent.referral_count || 0} />
-            <Info label="Last Contact" value={agent.last_contact_date || "Not logged"} />
-            <Info label="Next Follow Up" value={agent.next_follow_up_date || "Not set"} />
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4">
-            {agent.agent_phone && <a className="bg-white text-slate-950 text-center rounded-xl px-3 py-2 font-bold" href={`tel:${agent.agent_phone}`}>Call</a>}
-            {agent.agent_phone && <a className="bg-white text-slate-950 text-center rounded-xl px-3 py-2 font-bold" href={`sms:${agent.agent_phone}`}>Text</a>}
-            {agent.agent_email && <a className="bg-white text-slate-950 text-center rounded-xl px-3 py-2 font-bold" href={`mailto:${agent.agent_email}`}>Email</a>}
-            {addressText && <a className="bg-white text-slate-950 text-center rounded-xl px-3 py-2 font-bold" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addressText)}`} target="_blank" rel="noreferrer">Map</a>}
+    <div className="modalOverlay">
+      <div className="profileSheet">
+        <div className="sheetHeader">
+          <button onClick={close}>Close</button>
+          <strong>Agent Profile</strong>
+          <span />
+        </div>
+
+        <div className="profileHero">
+          <div className="avatar">{agent.name.slice(0, 1).toUpperCase()}</div>
+          <h2>{agent.name}</h2>
+          <p>{agent.agency_name}</p>
+          <div className="profileStats">
+            <Metric label="Score" value={agent.score} />
+            <Metric label="Referrals" value={agent.referral_count || 0} />
+            <Metric label="Days" value={agent.daysRemaining === null ? "-" : agent.daysRemaining < 0 ? `${Math.abs(agent.daysRemaining)} late` : agent.daysRemaining} />
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          <QuickButton label="Phone Call" onClick={() => onQuickAction(agent, "Phone Call")} />
-          <QuickButton label="Office Stop In" onClick={() => onQuickAction(agent, "Office Stop In")} />
-          <QuickButton label="Referral Ask" onClick={() => onQuickAction(agent, "Referral Request")} />
-          <QuickButton label="Referral Won" onClick={() => onQuickAction(agent, "Referral Received")} />
+        <div className="quickGrid">
+          {agent.agent_phone && <a href={`tel:${agent.agent_phone}`}>Call</a>}
+          {agent.agent_phone && <a href={`sms:${agent.agent_phone}`}>Text</a>}
+          {agent.agent_email && <a href={`mailto:${agent.agent_email}`}>Email</a>}
+          {address && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`} target="_blank" rel="noreferrer">Map</a>}
         </div>
 
-        <div className="bg-slate-800 rounded-2xl p-4">
-          <p className="font-bold mb-2">Relationship Status</p>
-          <select value={agent.relationship_status || "New Prospect"} onChange={(e) => onStatusChange(agent, e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2">
+        <div className="quickGrid">
+          <button onClick={() => openQuickAction(agent, "Phone Call")}>Log Call</button>
+          <button onClick={() => openQuickAction(agent, "Office Stop In")}>Log Stop In</button>
+          <button onClick={() => openQuickAction(agent, "Referral Request")}>Referral Ask</button>
+          <button onClick={() => openQuickAction(agent, "Referral Received")}>Referral Won</button>
+        </div>
+
+        <div className="card">
+          <label>Status</label>
+          <select value={agent.relationship_status || "New Prospect"} onChange={(e) => updateStatus(agent, e.target.value)}>
             {STATUS_OPTIONS.map((status) => <option key={status}>{status}</option>)}
           </select>
         </div>
 
-        {tags.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {tags.map((tag) => <span key={tag} className="text-xs bg-slate-800 border border-slate-700 rounded-full px-3 py-1">{tag}</span>)}
-          </div>
-        )}
-
-        <div className="bg-slate-800 rounded-2xl p-4">
-          <p className="font-bold mb-2">Memory Notes</p>
-          <p className="text-slate-300 whitespace-pre-wrap">{agent.notes || "No memory notes yet."}</p>
-          {agent.favorite_food && <p className="text-slate-300 mt-3">Favorite food/drink: {agent.favorite_food}</p>}
-          {agent.birthday && <p className="text-slate-300">Birthday: {agent.birthday}</p>}
+        <div className="card">
+          <h3>Memory</h3>
+          <p>{agent.notes || "No memory notes yet."}</p>
+          {agent.favorite_food && <p><strong>Food/Drink:</strong> {agent.favorite_food}</p>}
+          {agent.birthday && <p><strong>Birthday:</strong> {agent.birthday}</p>}
+          {tags.length > 0 && <div className="tagWrap">{tags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
         </div>
 
-        <div>
-          <h3 className="text-xl font-bold mb-3">Engagement Timeline</h3>
-          {engagements.length === 0 ? (
-            <p className="text-slate-300">No engagement history yet.</p>
-          ) : (
-            <div className="space-y-3">
-              {engagements.map((engagement) => (
-                <div key={engagement.id} className="border border-slate-700 rounded-2xl p-4">
-                  <div className="flex justify-between gap-3">
-                    <p className="font-bold">{engagement.engagement_type}</p>
-                    <p className="text-sm text-slate-400">{engagement.engagement_date}</p>
-                  </div>
-                  {engagement.action_taken && <p className="text-sm text-slate-300 mt-1">Action: {engagement.action_taken}</p>}
-                  {engagement.notes && <p className="mt-3 whitespace-pre-wrap">{engagement.notes}</p>}
-                  {engagement.outcome && <p className="mt-3 text-slate-300">Outcome: {engagement.outcome}</p>}
-                  {engagement.next_action && <p className="mt-3 text-slate-300">Next: {engagement.next_action}</p>}
-                </div>
-              ))}
+        <div className="card">
+          <h3>Engagement Timeline</h3>
+          {engagements.length === 0 ? <p>No history yet.</p> : engagements.map((item) => (
+            <div className="timelineItem" key={item.id}>
+              <div className="timelineTop"><strong>{item.engagement_type}</strong><span>{item.engagement_date}</span></div>
+              {item.action_taken && <p><strong>Action:</strong> {item.action_taken}</p>}
+              {item.notes && <p>{item.notes}</p>}
+              {item.outcome && <p><strong>Outcome:</strong> {item.outcome}</p>}
+              {item.next_action && <p><strong>Next:</strong> {item.next_action}</p>}
             </div>
-          )}
+          ))}
         </div>
 
-        <div className="flex gap-3 pt-3 border-t border-slate-700">
-          <button onClick={() => onArchive(agent)} className="text-slate-300 hover:underline">Move to Do Not Pursue</button>
-          <button onClick={() => onDelete(agent)} className="text-red-300 hover:underline">Delete Permanently</button>
+        <div className="dangerZone">
+          <button onClick={() => archiveAgent(agent)}>Move to Do Not Pursue</button>
+          <button onClick={() => deleteAgent(agent)}>Delete Permanently</button>
         </div>
       </div>
-    </Modal>
+    </div>
   );
 }
 
-function SmartPlaybook() {
+function EngagementModal({ agent, actionType, form, setForm, saving, saveEngagement, close }) {
   return (
-    <section className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl">
-      <h2 className="text-2xl font-bold mb-2">Relationship Playbook</h2>
-      <p className="text-slate-400 text-sm mb-4">Use this when you are not sure what action to take next.</p>
-      <div className="space-y-3 text-sm">
-        <Play title="Cold or New" text="Short intro call, then office stop-in. Your goal is familiarity, not a referral." />
-        <Play title="Needs Follow Up" text="Contact every 15 days. Ask one useful question, remember one personal detail, log the note." />
-        <Play title="Warm" text="Contact every 30 days. Coffee, tacos, quick check-in, or useful storm update. Keep the relationship alive." />
-        <Play title="Referral Partner" text="Protect this relationship. Thank them, report back quickly, and never let them wonder what happened." />
-      </div>
+    <div className="modalOverlay">
+      <form className="actionSheet" onSubmit={saveEngagement}>
+        <div className="sheetHeader">
+          <button type="button" onClick={close}>Cancel</button>
+          <strong>{actionType}</strong>
+          <span />
+        </div>
+        <p className="modalSub">{displayAgentName(agent)} · {agent.agency_name}</p>
+
+        {actionType === "Office Stop In" && (
+          <Select label="Action Taken" value={form.action_taken} options={OFFICE_ACTIONS} onChange={(value) => setForm({ ...form, action_taken: value })} />
+        )}
+
+        {actionType !== "Office Stop In" && actionType !== "Phone Call" && (
+          <Input label="Action Taken" value={form.action_taken} onChange={(value) => setForm({ ...form, action_taken: value })} placeholder="Short label" />
+        )}
+
+        <Textarea label="Engagement Notes" value={form.notes} onChange={(value) => setForm({ ...form, notes: value })} placeholder="What happened? Who was there? What did you learn?" required />
+        <Textarea label="Outcome" value={form.outcome} onChange={(value) => setForm({ ...form, outcome: value })} placeholder="Warmer, neutral, needs another touch, etc." />
+        <Input label="Next Action" value={form.next_action} onChange={(value) => setForm({ ...form, next_action: value })} placeholder="Stop by next month with coffee" />
+        <button className="primaryButton" disabled={saving}>{saving ? "Saving..." : "Save Engagement"}</button>
+      </form>
+    </div>
+  );
+}
+
+function displayAgentName(agent) {
+  return [agent.agent_first_name, agent.agent_last_name].filter(Boolean).join(" ") || agent.agency_name || "Unnamed Agent";
+}
+
+function Section({ title, subtitle, children }) {
+  return (
+    <section className="sectionCard">
+      <div className="sectionHead"><h2>{title}</h2><p>{subtitle}</p></div>
+      <div className="sectionBody">{children}</div>
     </section>
   );
 }
 
+function Metric({ label, value, danger }) {
+  return (
+    <div className={`metric ${danger ? "dangerMetric" : ""}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function EmptyState({ text }) {
+  return <div className="emptyState">{text}</div>;
+}
+
 function Play({ title, text }) {
-  return (
-    <div className="bg-slate-800 rounded-2xl p-3">
-      <p className="font-bold">{title}</p>
-      <p className="text-slate-300">{text}</p>
-    </div>
-  );
-}
-
-function MetricCard({ label, value, tone }) {
-  return (
-    <div className={`rounded-2xl p-4 md:p-5 border shadow-xl ${tone === "urgent" ? "bg-red-950/40 border-red-800" : "bg-slate-900 border-slate-800"}`}>
-      <p className="text-slate-400 text-sm">{label}</p>
-      <h2 className="text-3xl md:text-4xl font-bold mt-1">{value}</h2>
-    </div>
-  );
-}
-
-function Info({ label, value, urgent }) {
-  return (
-    <div className="bg-slate-950/50 rounded-xl p-3">
-      <p className="text-slate-400 text-xs">{label}</p>
-      <p className={`font-semibold ${urgent ? "text-red-300" : "text-slate-100"}`}>{value}</p>
-    </div>
-  );
-}
-
-function QuickButton({ label, onClick, dark }) {
-  return (
-    <button onClick={onClick} className={`${dark ? "bg-slate-800 text-slate-100 border border-slate-700" : "bg-white text-slate-950"} rounded-xl px-3 py-2 text-sm font-bold hover:opacity-90`}>
-      {label}
-    </button>
-  );
+  return <div className="play"><h3>{title}</h3><p>{text}</p></div>;
 }
 
 function Input({ label, value, onChange, required = false, type = "text", placeholder = "" }) {
   return (
-    <div>
-      <label className="block text-sm text-slate-300 mb-1">{label}{required ? " *" : ""}</label>
-      <input type={type} value={value || ""} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} required={required} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-100" />
-    </div>
+    <label className="field">
+      <span>{label}{required ? " *" : ""}</span>
+      <input type={type} value={value || ""} onChange={(e) => onChange(e.target.value)} required={required} placeholder={placeholder} />
+    </label>
   );
 }
 
-function Textarea({ label, value, onChange, placeholder = "", required = false }) {
+function Textarea({ label, value, onChange, required = false, placeholder = "" }) {
   return (
-    <div>
-      <label className="block text-sm text-slate-300 mb-1">{label}{required ? " *" : ""}</label>
-      <textarea value={value || ""} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} required={required} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 min-h-24 text-slate-100" />
-    </div>
+    <label className="field">
+      <span>{label}{required ? " *" : ""}</span>
+      <textarea value={value || ""} onChange={(e) => onChange(e.target.value)} required={required} placeholder={placeholder} />
+    </label>
   );
 }
 
 function Select({ label, value, options, onChange }) {
   return (
-    <div>
-      <label className="block text-sm text-slate-300 mb-1">{label}</label>
-      <select value={value || ""} onChange={(e) => onChange(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-100">
+    <label className="field">
+      <span>{label}</span>
+      <select value={value || ""} onChange={(e) => onChange(e.target.value)}>
         {options.map((option) => <option key={option}>{option}</option>)}
       </select>
-    </div>
+    </label>
   );
 }
 
-function Modal({ title, children, onClose }) {
+function BottomNav({ activeTab, setActiveTab }) {
+  const items = [
+    ["mission", "Mission"],
+    ["agents", "Agents"],
+    ["add", "Add"],
+    ["partners", "Partners"],
+    ["playbook", "Playbook"]
+  ];
+
   return (
-    <div className="fixed inset-0 bg-black/75 z-50 p-4 overflow-y-auto">
-      <div className="max-w-3xl mx-auto bg-slate-900 border border-slate-700 rounded-3xl p-5 md:p-6 mt-6 shadow-2xl">
-        <div className="flex justify-between items-start gap-4 mb-5">
-          <h2 className="text-2xl font-bold">{title}</h2>
-          <button onClick={onClose} className="bg-slate-800 px-3 py-1 rounded-xl">Close</button>
-        </div>
-        {children}
-      </div>
-    </div>
+    <nav className="bottomNav">
+      {items.map(([key, label]) => (
+        <button key={key} onClick={() => setActiveTab(key)} className={activeTab === key ? "active" : ""}>{label}</button>
+      ))}
+    </nav>
   );
 }
 
@@ -904,3 +815,79 @@ function parseTagsSafe(tags) {
   if (!tags) return [];
   return String(tags).split(",").map((tag) => tag.trim()).filter(Boolean);
 }
+
+const styles = `
+* { box-sizing: border-box; }
+body { margin: 0; background: #050816; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+button, input, textarea, select { font: inherit; }
+.appShell { min-height: 100vh; background: radial-gradient(circle at top, #1e293b 0, #050816 45%, #020617 100%); }
+.screen { max-width: 980px; margin: 0 auto; padding: 14px 14px 96px; }
+.topHeader { position: sticky; top: 0; z-index: 10; backdrop-filter: blur(18px); background: rgba(15, 23, 42, 0.86); border: 1px solid rgba(148, 163, 184, 0.18); border-radius: 0 0 26px 26px; padding: 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.28); }
+.eyebrow { color: #94a3b8; text-transform: uppercase; letter-spacing: .12em; font-size: 12px; font-weight: 700; }
+h1 { margin: 2px 0 0; font-size: 28px; line-height: 1.05; }
+h2, h3, p { margin-top: 0; }
+.ghostButton { background: rgba(255,255,255,.08); color: #f8fafc; border: 1px solid rgba(255,255,255,.12); border-radius: 14px; padding: 10px 12px; }
+.message, .loadingCard { margin-top: 14px; background: rgba(15, 23, 42, .92); border: 1px solid rgba(148, 163, 184, .2); border-radius: 18px; padding: 14px; color: #cbd5e1; }
+.stack { display: flex; flex-direction: column; gap: 14px; margin-top: 14px; }
+.metricGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.metric { background: rgba(15, 23, 42, .88); border: 1px solid rgba(148, 163, 184, .18); border-radius: 20px; padding: 14px; min-height: 80px; }
+.metric span { display: block; color: #94a3b8; font-size: 12px; margin-bottom: 8px; }
+.metric strong { font-size: 28px; }
+.dangerMetric { background: rgba(127, 29, 29, .32); border-color: rgba(248, 113, 113, .35); }
+.sectionCard, .formCard, .filterCard, .card, .play { background: rgba(15, 23, 42, .9); border: 1px solid rgba(148, 163, 184, .16); border-radius: 24px; padding: 16px; box-shadow: 0 18px 50px rgba(0,0,0,.22); }
+.sectionHead h2 { margin: 0; font-size: 22px; }
+.sectionHead p { margin: 4px 0 12px; color: #94a3b8; font-size: 14px; }
+.sectionBody { display: flex; flex-direction: column; gap: 10px; }
+.emptyState { background: rgba(2, 6, 23, .55); border-radius: 18px; padding: 16px; color: #cbd5e1; }
+.agentRow { background: rgba(30, 41, 59, .92); border: 1px solid rgba(148, 163, 184, .14); border-radius: 20px; padding: 13px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.urgentRow { background: rgba(127, 29, 29, .26); border-color: rgba(248, 113, 113, .35); }
+.agentMain { flex: 1; cursor: pointer; min-width: 0; }
+.rowTop { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.rowTop strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.scorePill { background: #f8fafc; color: #020617; border-radius: 999px; padding: 4px 9px; font-size: 12px; font-weight: 800; }
+.muted { color: #94a3b8; font-size: 13px; margin-top: 3px; }
+.dangerText { color: #fca5a5; font-size: 13px; margin-top: 3px; font-weight: 700; }
+.rowActions { display: flex; gap: 7px; }
+.rowActions button, .quickGrid button, .quickGrid a { background: #f8fafc; color: #020617; border: none; border-radius: 14px; padding: 10px 12px; font-weight: 800; text-decoration: none; text-align: center; }
+.filterCard { display: flex; flex-direction: column; gap: 10px; }
+.searchInput, input, textarea, select { width: 100%; background: rgba(2, 6, 23, .8); color: #f8fafc; border: 1px solid rgba(148, 163, 184, .25); border-radius: 15px; padding: 12px; outline: none; }
+textarea { min-height: 96px; resize: vertical; }
+.filterRow, .twoCol { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.formCard { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+.field { display: flex; flex-direction: column; gap: 6px; color: #cbd5e1; font-size: 13px; font-weight: 700; }
+.primaryButton { width: 100%; border: none; border-radius: 18px; padding: 15px; background: #f8fafc; color: #020617; font-weight: 900; font-size: 16px; }
+.bottomNav { position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); width: min(96vw, 720px); background: rgba(15, 23, 42, .94); border: 1px solid rgba(148, 163, 184, .2); border-radius: 26px; padding: 8px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; z-index: 30; box-shadow: 0 22px 70px rgba(0,0,0,.45); backdrop-filter: blur(18px); }
+.bottomNav button { border: none; background: transparent; color: #94a3b8; border-radius: 18px; padding: 11px 4px; font-size: 12px; font-weight: 800; }
+.bottomNav button.active { background: #f8fafc; color: #020617; }
+.modalOverlay { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.72); display: flex; justify-content: center; align-items: flex-end; padding: 12px; }
+.profileSheet, .actionSheet { width: min(100%, 760px); max-height: 92vh; overflow-y: auto; background: #0f172a; border: 1px solid rgba(148, 163, 184, .22); border-radius: 30px 30px 18px 18px; padding: 16px; box-shadow: 0 -22px 80px rgba(0,0,0,.55); }
+.sheetHeader { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.sheetHeader button { background: rgba(255,255,255,.08); color: #f8fafc; border: 1px solid rgba(255,255,255,.1); border-radius: 12px; padding: 8px 10px; }
+.profileHero { text-align: center; background: rgba(30, 41, 59, .7); border-radius: 24px; padding: 18px; margin-bottom: 12px; }
+.avatar { width: 64px; height: 64px; border-radius: 22px; background: #f8fafc; color: #020617; display: grid; place-items: center; font-size: 28px; font-weight: 900; margin: 0 auto 10px; }
+.profileHero h2 { margin: 0; font-size: 28px; }
+.profileHero p { color: #94a3b8; margin: 4px 0 0; }
+.profileStats, .quickGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px; }
+.tagWrap { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.tagWrap span { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.1); border-radius: 999px; padding: 6px 10px; font-size: 12px; }
+.timelineItem { border-top: 1px solid rgba(148, 163, 184, .16); padding: 12px 0; }
+.timelineTop { display: flex; justify-content: space-between; gap: 8px; color: #f8fafc; }
+.timelineTop span { color: #94a3b8; font-size: 13px; }
+.dangerZone { display: flex; gap: 10px; margin: 16px 0 6px; }
+.dangerZone button { border: 1px solid rgba(248, 113, 113, .35); color: #fca5a5; background: rgba(127, 29, 29, .18); border-radius: 14px; padding: 10px; }
+.modalSub { color: #94a3b8; margin-bottom: 14px; }
+.play h3 { margin-bottom: 6px; }
+.play p { color: #cbd5e1; margin-bottom: 0; }
+@media (max-width: 640px) {
+  .screen { padding: 10px 10px 98px; }
+  .topHeader { border-radius: 0 0 22px 22px; padding: 15px; }
+  h1 { font-size: 24px; }
+  .metricGrid { grid-template-columns: repeat(2, 1fr); }
+  .agentRow { align-items: stretch; flex-direction: column; }
+  .rowActions { display: grid; grid-template-columns: 1fr 1fr; }
+  .profileStats, .quickGrid { grid-template-columns: repeat(2, 1fr); }
+  .filterRow, .twoCol { grid-template-columns: 1fr; }
+  .bottomNav { bottom: 8px; }
+  .bottomNav button { font-size: 11px; padding: 10px 2px; }
+}
+`;
