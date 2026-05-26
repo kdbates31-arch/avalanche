@@ -106,9 +106,9 @@ export default function App() {
   }
 
   function emailBody(agent) {
-    return "Hi " + (agent.agent_first_name || "") + ",
+    return `Hi ${agent.agent_first_name || ""},
 
-";
+`;
   }
 
   function emailHref(agent) {
@@ -133,12 +133,12 @@ export default function App() {
       engagement_type: "Email Sent",
       engagement_date: now,
       action_taken: "Email",
-      notes: "Email opened from Avalanche CRM.
+      notes: `Email opened from Avalanche CRM.
 
-Subject: " + subject + "
+Subject: ${subject}
 
 Body:
-" + body,
+${body}`,
       outcome: "Email follow-up initiated",
       next_action: ""
     }]);
