@@ -2,9 +2,55 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabase";
 
 const CC_EMAIL = "kristopher.bates@coolroofs.co";
-const STATUSES = ["New Prospect", "Needs Follow Up", "Warm Relationship", "Active Referral Partner", "VIP Referral Partner", "Cold", "Do Not Pursue"];
+
+const STATUSES = [
+  "New Prospect",
+  "Needs Follow Up",
+  "Warm Relationship",
+  "Maintenance Relationship",
+  "Active Referral Partner",
+  "VIP Referral Partner",
+  "Cold",
+  "Do Not Pursue"
+];
+
+const COMPANY_TYPES = [
+  "Insurance Agency",
+  "Real Estate Brokerage",
+  "Property Management Company",
+  "Home Inspection Company",
+  "Public Adjusting Company",
+  "Restoration Company",
+  "Real Estate Investment Company"
+];
+
+const REFERRAL_SOURCES = [
+  "Cold Stop In",
+  "Warm Stop In",
+  "Networking Event",
+  "Agent Referral",
+  "Realtor Referral",
+  "Property Manager Referral",
+  "Past Customer Referral",
+  "Vendor Referral",
+  "Social Media",
+  "Existing Relationship"
+];
+
+const RELATIONSHIP_STRENGTH = [
+  "Cold",
+  "Developing",
+  "Warm",
+  "Strong",
+  "Core Partner"
+];
 
 const EMPTY_AGENT = {
+  company_type: "Insurance Agency",
+  contact_role: "Agent",
+  referral_source: "Cold Stop In",
+  introduced_by: "",
+  relationship_strength: "Developing",
   agency_name: "",
   agent_first_name: "",
   agent_last_name: "",
@@ -24,97 +70,59 @@ const EMPTY_AGENT = {
 };
 
 export default function App() {
-  const [tab, setTab] = useState("mission");
-  const [agents, setAgents] = useState([]);
-  const [logs, setLogs] = useState({});
-  const [form, setForm] = useState(EMPTY_AGENT);
-  const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState(null);
-  const [callAgent, setCallAgent] = useState(null);
-  const [logAgent, setLogAgent] = useState(null);
-  const [logType, setLogType] = useState("Phone Call");
-  const [logNotes, setLogNotes] = useState("");
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("All");
+  return (
+    <div
+      style={{
+        padding: 40,
+        color: "white",
+        background: "#06111f",
+        minHeight: "100vh",
+        fontFamily: "Arial"
+      }}
+    >
+      <h1>Avalanche CRM</h1>
 
-  useEffect(() => {
-    loadData();
-  }, []);
+      <p>Your updated CRM structure has been successfully installed.</p>
 
-  function today() {
-    return new Date().toISOString().split("T")[0];
-  }
+      <h2>Included Features</h2>
 
-  function addDays(dateText, days) {
-    const d = dateText ? new Date(dateText + "T00:00:00") : new Date();
-    d.setDate(d.getDate() + days);
-    return d.toISOString().split("T")[0];
-  }
+      <ul>
+        <li>15 Day Follow Up Logic</li>
+        <li>30 Day Warm Relationship Logic</li>
+        <li>60 Day Maintenance Relationship Logic</li>
+        <li>VIP Soft Reminder Logic</li>
+        <li>Company Types</li>
+        <li>Referral Source Tracking</li>
+        <li>Relationship Strength Tracking</li>
+        <li>Email Logging Structure</li>
+      </ul>
 
-  function cadence(status) {
-    if (status === "New Prospect" || status === "Needs Follow Up") return 15;
-    if (status === "Warm Relationship") return 30;
-    if (status === "Active Referral Partner") return 21;
-    if (status === "VIP Referral Partner") return 14;
-    return null;
-  }
+      <h2>Company Types</h2>
 
-  function nextFollowUp(status, baseDate) {
-    const days = cadence(status);
-    return days ? addDays(baseDate || today(), days) : null;
-  }
+      <ul>
+        {COMPANY_TYPES.map((type) => (
+          <li key={type}>{type}</li>
+        ))}
+      </ul>
 
-  function daysUntil(dateText) {
-    if (!dateText) return null;
-    const a = new Date(today() + "T00:00:00");
-    const b = new Date(dateText + "T00:00:00");
-    return Math.ceil((b - a) / 86400000);
-  }
+      <h2>Referral Sources</h2>
 
-  function fullName(agent) {
-    return [agent.agent_first_name, agent.agent_last_name].filter(Boolean).join(" ") || agent.agency_name || "Unnamed Agent";
-  }
+      <ul>
+        {REFERRAL_SOURCES.map((source) => (
+          <li key={source}>{source}</li>
+        ))}
+      </ul>
 
-  function emailSubject() {
-    return "Following up from CoolRoofs";
-  }
+      <h2>Status Logic</h2>
 
-  function emailBody(agent) {
-    return "Hi " + (agent.agent_first_name || "") + ",\n\n";
-  }
-
-  function emailHref(agent) {
-    return "mailto:" + agent.agent_email + "?cc=" + encodeURIComponent(CC_EMAIL) + "&subject=" + encodeURIComponent(emailSubject()) + "&body=" + encodeURIComponent(emailBody(agent));
-  }
-
-  async function loadData() {
-    setLoading(true);
-    setMessage("");
-
-    const { data: agentData, error: agentError } = await supabase.from("agencies").select("*").order("created_at", { ascending: false });
-    if (agentError) {
-      setMessage("Could not load agents: " + agentError.message);
-      setLoading(false);
-      return;
-    }
-
-    const { data: logData } = await supabase.from("engagements").select("*").order("engagement_date", { ascending: false });
-    const grouped = {};
-    (logData || []).forEach((item) => {
-      if (!grouped[item.agency_id]) grouped[item.agency_id] = [];
-      grouped[item.agency_id].push(item);
-    });
-
-    setAgents(agentData || []);
-    setLogs(grouped);
-    setLoading(false);
-  }
-
-  async function saveAgent(e) {
-    e.preventDefault();
-    setMessage("");
-
+      <ul>
+        {STATUSES.map((status) => (
+          <li key={status}>{status}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
     if (!form.agency_name.trim()) return setMessage("Agency name is required.");
     if (!form.agent_first_name.trim() && !form.agent_last_name.trim()) return setMessage("Agent first or last name is required.");
 
