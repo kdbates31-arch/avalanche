@@ -101,11 +101,66 @@ export default function App() {
     return Math.max(0, Math.min(100, value));
   }
 
+  function emailSubject(agent) {
+    return "Following up from CoolRoofs";
+  }
+
+  function emailBody(agent) {
+    return "Hi " + (agent.agent_first_name || "") + ",
+
+";
+  }
+
   function emailHref(agent) {
     if (!agent.agent_email) return "#";
-    const subject = encodeURIComponent("Following up from CoolRoofs");
-    const body = encodeURIComponent("Hi " + (agent.agent_first_name || "") + ",\n\n");
-    return "mailto:" + agent.agent_email + "?cc=" + encodeURIComponent(CC_EMAIL) + "&subject=" + subject + "&body=" + body;
+    return "mailto:" + agent.agent_email + "?cc=" + encodeURIComponent(CC_EMAIL) + "&subject=" + encodeURIComponent(emailSubject(agent)) + "&body=" + encodeURIComponent(emailBody(agent));
+  }
+
+  async function emailAndLog(agent) {
+    if (!agent.agent_email) {
+      setMessage("No email address saved for this agent.");
+      return;
+    }
+
+    setMessage("");
+    const now = today();
+    const next = nextFollowUp(agent.relationship_status, now);
+    const subject = emailSubject(agent);
+    const body = emailBody(agent);
+
+    const { error: logError } = await supabase.from("engagements").insert([{
+      agency_id: agent.id,
+      engagement_type: "Email Sent",
+      engagement_date: now,
+      action_taken: "Email",
+      notes: "Email opened from Avalanche CRM.
+
+Subject: " + subject + "
+
+Body:
+" + body,
+      outcome: "Email follow-up initiated",
+      next_action: ""
+    }]);
+
+    if (logError) {
+      setMessage("Email opened, but log failed: " + logError.message);
+      window.location.href = emailHref(agent);
+      return;
+    }
+
+    const { error: updateError } = await supabase.from("agencies").update({
+      last_contact_date: now,
+      next_follow_up_date: next,
+      last_engagement_type: "Email Sent",
+      engagement_count: Number(agent.engagement_count || 0) + 1
+    }).eq("id", agent.id);
+
+    if (updateError) setMessage("Email logged, but date reset failed: " + updateError.message);
+    else setMessage("Email logged and follow-up date reset.");
+
+    await loadData();
+    window.location.href = emailHref(agent);
   }
 
   async function loadData() {
@@ -320,7 +375,7 @@ export default function App() {
               <button onClick={() => openList("Active Referral Partner")} className="tile"><span>Partners</span><b>{partners.length}</b></button>
             </div>
             <Section title="Priority Calls" subtitle="People who need contact now.">
-              {due.length === 0 ? <Empty text="No overdue follow-ups." /> : due.slice(0, 12).map((a) => <AgentRow key={a.id} agent={a} openAgent={setSelectedAgent} openCall={setCallAgent} emailHref={emailHref} />)}
+              {due.length === 0 ? <Empty text="No overdue follow-ups." /> : due.slice(0, 12).map((a) => <AgentRow key={a.id} agent={a} openAgent={setSelectedAgent} openCall={setCallAgent} emailHref={emailHref} emailAndLog={emailAndLog} />)}
             </Section>
           </div>
         )}
@@ -339,7 +394,7 @@ export default function App() {
               </div>
             </div>
             <Section title={`Agent Directory (${directory.length})`} subtitle="Tap Open to see the profile and history.">
-              {directory.length === 0 ? <Empty text="No agents match this filter." /> : directory.map((a) => <AgentRow key={a.id} agent={a} openAgent={setSelectedAgent} openCall={setCallAgent} emailHref={emailHref} />)}
+              {directory.length === 0 ? <Empty text="No agents match this filter." /> : directory.map((a) => <AgentRow key={a.id} agent={a} openAgent={setSelectedAgent} openCall={setCallAgent} emailHref={emailHref} emailAndLog={emailAndLog} />)}
             </Section>
           </div>
         )}
@@ -348,7 +403,7 @@ export default function App() {
 
         {!loading && tab === "partners" && (
           <Section title="Referral Partners" subtitle="Protect these relationships.">
-            {partners.length === 0 ? <Empty text="No referral partners yet." /> : partners.map((a) => <AgentRow key={a.id} agent={a} openAgent={setSelectedAgent} openCall={setCallAgent} emailHref={emailHref} />)}
+            {partners.length === 0 ? <Empty text="No referral partners yet." /> : partners.map((a) => <AgentRow key={a.id} agent={a} openAgent={setSelectedAgent} openCall={setCallAgent} emailHref={emailHref} emailAndLog={emailAndLog} />)}
           </Section>
         )}
 
@@ -359,14 +414,14 @@ export default function App() {
         {[['mission','Mission'],['agents','Agents'],['add','Add'],['partners','Partners'],['playbook','Playbook']].map(([key, label]) => <button key={key} className={tab === key ? "on" : ""} onClick={() => setTab(key)}>{label}</button>)}
       </nav>
 
-      {selectedAgent && <Profile agent={selectedAgent} logs={logs[selectedAgent.id] || []} close={() => setSelectedAgent(null)} openCall={setCallAgent} startLog={startLog} changeStatus={changeStatus} archiveAgent={archiveAgent} deleteAgent={deleteAgent} emailHref={emailHref} />}
+      {selectedAgent && <Profile agent={selectedAgent} logs={logs[selectedAgent.id] || []} close={() => setSelectedAgent(null)} openCall={setCallAgent} startLog={startLog} changeStatus={changeStatus} archiveAgent={archiveAgent} deleteAgent={deleteAgent} emailHref={emailHref} emailAndLog={emailAndLog} />}
       {callAgent && <CallModal agent={callAgent} close={() => setCallAgent(null)} startLog={startLog} />}
       {logAgent && <LogModal agent={logAgent} type={logType} form={logForm} setForm={setLogForm} saveLog={saveLog} close={() => setLogAgent(null)} saving={saving} />}
     </div>
   );
 }
 
-function AgentRow({ agent, openAgent, openCall, emailHref }) {
+function AgentRow({ agent, openAgent, openCall, emailHref, emailAndLog }) {
   const late = agent.days !== null && agent.days < 0;
   const label = agent.days === null ? "No cycle" : agent.days < 0 ? `${Math.abs(agent.days)} days overdue` : agent.days === 0 ? "Due today" : `${agent.days} days left`;
   return (
@@ -378,7 +433,7 @@ function AgentRow({ agent, openAgent, openCall, emailHref }) {
       </div>
       <div className="rowBtns">
         <button onClick={() => openCall(agent)}>Call</button>
-        {agent.agent_email && <a href={emailHref(agent)}>Email</a>}
+        {agent.agent_email && <button onClick={() => emailAndLog(agent)}>Email</button>
         <button onClick={() => openAgent(agent)}>Open</button>
       </div>
     </div>
@@ -407,10 +462,10 @@ function AddAgent({ agentForm, setAgentForm, saveAgent, saving, nextFollowUp, to
   );
 }
 
-function Profile({ agent, logs, close, openCall, startLog, changeStatus, archiveAgent, deleteAgent, emailHref }) {
+function Profile({ agent, logs, close, openCall, startLog, changeStatus, archiveAgent, deleteAgent, emailHref, emailAndLog }) {
   const address = [agent.address, agent.city, agent.state].filter(Boolean).join(", ");
   return (
-    <div className="overlay"><div className="sheet"><div className="sheetHead"><button onClick={close}>Close</button><b>Agent Profile</b><span /></div><div className="hero"><div className="avatar">{agent.name.slice(0,1)}</div><h2>{agent.name}</h2><p>{agent.agency_name}</p></div><div className="quick">{(agent.agent_phone || agent.main_phone) && <button onClick={() => openCall(agent)}>Call</button>}{agent.agent_phone && <a href={`sms:${agent.agent_phone}`}>Text</a>}{agent.agent_email && <a href={emailHref(agent)}>Email</a>}{address && <a target="_blank" rel="noreferrer" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`}>Map</a>}</div><div className="quick"><button onClick={() => startLog(agent, "Phone Call")}>Log Call</button><button onClick={() => startLog(agent, "Office Stop In")}>Log Stop In</button><button onClick={() => startLog(agent, "Referral Request")}>Referral Ask</button><button onClick={() => startLog(agent, "Referral Received")}>Referral Won</button></div><div className="card"><Select label="Status" value={agent.relationship_status || "New Prospect"} options={STATUSES} onChange={(v) => changeStatus(agent, v)} /></div><div className="card"><h3>Memory</h3><p>{agent.notes || "No memory notes yet."}</p>{agent.favorite_food && <p><b>Food/Drink:</b> {agent.favorite_food}</p>}{agent.birthday && <p><b>Birthday:</b> {agent.birthday}</p>}</div><div className="card"><h3>Timeline</h3>{logs.length === 0 ? <p>No history yet.</p> : logs.map((log) => <div className="log" key={log.id}><b>{log.engagement_type}</b><small>{log.engagement_date}</small>{log.action_taken && <p><b>Action:</b> {log.action_taken}</p>}{log.notes && <p>{log.notes}</p>}{log.outcome && <p><b>Outcome:</b> {log.outcome}</p>}{log.next_action && <p><b>Next:</b> {log.next_action}</p>}</div>)}</div><div className="dangerBtns"><button onClick={() => archiveAgent(agent)}>Do Not Pursue</button><button onClick={() => deleteAgent(agent)}>Delete</button></div></div></div>
+    <div className="overlay"><div className="sheet"><div className="sheetHead"><button onClick={close}>Close</button><b>Agent Profile</b><span /></div><div className="hero"><div className="avatar">{agent.name.slice(0,1)}</div><h2>{agent.name}</h2><p>{agent.agency_name}</p></div><div className="quick">{(agent.agent_phone || agent.main_phone) && <button onClick={() => openCall(agent)}>Call</button>}{agent.agent_phone && <a href={`sms:${agent.agent_phone}`}>Text</a>}{agent.agent_email && <button onClick={() => emailAndLog(agent)}>Email</button>{address && <a target="_blank" rel="noreferrer" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`}>Map</a>}</div><div className="quick"><button onClick={() => startLog(agent, "Phone Call")}>Log Call</button><button onClick={() => startLog(agent, "Office Stop In")}>Log Stop In</button><button onClick={() => startLog(agent, "Referral Request")}>Referral Ask</button><button onClick={() => startLog(agent, "Referral Received")}>Referral Won</button></div><div className="card"><Select label="Status" value={agent.relationship_status || "New Prospect"} options={STATUSES} onChange={(v) => changeStatus(agent, v)} /></div><div className="card"><h3>Memory</h3><p>{agent.notes || "No memory notes yet."}</p>{agent.favorite_food && <p><b>Food/Drink:</b> {agent.favorite_food}</p>}{agent.birthday && <p><b>Birthday:</b> {agent.birthday}</p>}</div><div className="card"><h3>Timeline</h3>{logs.length === 0 ? <p>No history yet.</p> : logs.map((log) => <div className="log" key={log.id}><b>{log.engagement_type}</b><small>{log.engagement_date}</small>{log.action_taken && <p><b>Action:</b> {log.action_taken}</p>}{log.notes && <p>{log.notes}</p>}{log.outcome && <p><b>Outcome:</b> {log.outcome}</p>}{log.next_action && <p><b>Next:</b> {log.next_action}</p>}</div>)}</div><div className="dangerBtns"><button onClick={() => archiveAgent(agent)}>Do Not Pursue</button><button onClick={() => deleteAgent(agent)}>Delete</button></div></div></div>
   );
 }
 
@@ -438,3 +493,4 @@ function Select({ label, value, options, onChange }) { return <label className="
 const css = `
 *{box-sizing:border-box}body{margin:0;background:#050816;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button,input,select,textarea{font:inherit}.app{min-height:100vh;background:radial-gradient(circle at top,#1e293b,#020617 55%)}.screen{max-width:980px;margin:0 auto;padding:12px 12px 96px}.header{position:sticky;top:0;z-index:10;background:rgba(15,23,42,.92);backdrop-filter:blur(18px);border:1px solid rgba(148,163,184,.2);border-radius:0 0 24px 24px;padding:16px;display:flex;justify-content:space-between;align-items:center}.brand{color:#94a3b8;text-transform:uppercase;font-size:12px;font-weight:800;letter-spacing:.12em}h1{margin:2px 0 0;font-size:28px}h2,h3,p{margin-top:0}.header button,.secondary{background:rgba(255,255,255,.08);color:white;border:1px solid rgba(255,255,255,.14);border-radius:14px;padding:10px 12px}.message,.card{background:rgba(15,23,42,.92);border:1px solid rgba(148,163,184,.18);border-radius:22px;padding:16px;margin-top:12px}.stack{display:flex;flex-direction:column;gap:12px}.tight{gap:8px}.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px}.tile{background:rgba(15,23,42,.92);border:1px solid rgba(148,163,184,.22);border-radius:20px;padding:14px;color:white;text-align:left}.tile span{display:block;color:#94a3b8;font-size:12px}.tile b{font-size:30px}.danger{background:rgba(127,29,29,.36);border-color:rgba(248,113,113,.4)}.row{background:rgba(30,41,59,.9);border:1px solid rgba(148,163,184,.16);border-radius:18px;padding:12px;display:flex;justify-content:space-between;gap:10px;align-items:center}.late{background:rgba(127,29,29,.28);border-color:rgba(248,113,113,.38)}.rowText{flex:1;cursor:pointer}.rowText div{display:flex;justify-content:space-between;gap:10px}.rowText span{background:white;color:#020617;border-radius:999px;padding:4px 9px;font-size:12px;font-weight:900}.rowText p,.rowText small,.sub{color:#94a3b8}.rowBtns{display:flex;gap:7px}.rowBtns button,.rowBtns a,.quick button,.quick a,.callChoice{background:white;color:#020617;border:0;border-radius:14px;padding:10px 12px;font-weight:900;text-decoration:none;text-align:center}.controls{display:flex;flex-direction:column;gap:10px}.primary{width:100%;background:white;color:#020617;border:0;border-radius:16px;padding:14px;font-weight:900}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:flex;flex-direction:column;gap:6px;color:#cbd5e1;font-size:13px;font-weight:800}input,select,textarea{width:100%;background:rgba(2,6,23,.85);color:white;border:1px solid rgba(148,163,184,.25);border-radius:14px;padding:12px}textarea{min-height:92px}.form{display:flex;flex-direction:column;gap:12px}.empty{background:rgba(2,6,23,.55);border-radius:16px;padding:14px;color:#cbd5e1}.nav{position:fixed;left:50%;bottom:10px;transform:translateX(-50%);width:min(96vw,720px);background:rgba(15,23,42,.96);border:1px solid rgba(148,163,184,.22);border-radius:24px;padding:8px;display:grid;grid-template-columns:repeat(5,1fr);gap:4px;z-index:40}.nav button{background:transparent;color:#94a3b8;border:0;border-radius:16px;padding:11px 3px;font-size:12px;font-weight:900}.nav .on{background:white;color:#020617}.overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:70;display:flex;align-items:flex-end;justify-content:center;padding:12px}.sheet{width:min(100%,760px);max-height:92vh;overflow:auto;background:#0f172a;border:1px solid rgba(148,163,184,.24);border-radius:30px 30px 18px 18px;padding:16px}.small{max-width:560px}.sheetHead{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.sheetHead button{background:rgba(255,255,255,.08);color:white;border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:8px 10px}.hero{text-align:center;background:rgba(30,41,59,.75);border-radius:24px;padding:18px}.avatar{width:64px;height:64px;border-radius:22px;background:white;color:#020617;display:grid;place-items:center;margin:0 auto 10px;font-size:28px;font-weight:900}.quick{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.log{border-top:1px solid rgba(148,163,184,.18);padding:12px 0}.log small{float:right;color:#94a3b8}.dangerBtns{display:flex;gap:10px;margin-top:12px}.dangerBtns button{background:rgba(127,29,29,.2);color:#fca5a5;border:1px solid rgba(248,113,113,.35);border-radius:14px;padding:10px}.mutedCenter{text-align:center;color:#94a3b8}.disabled{background:rgba(148,163,184,.08);color:#64748b;border:1px solid rgba(148,163,184,.12);border-radius:18px;padding:15px;text-align:center;font-weight:900}.callChoice,.secondary{display:block;width:100%;text-align:center;margin-top:10px;text-decoration:none}@media(max-width:640px){.tiles{grid-template-columns:repeat(2,1fr)}.row{flex-direction:column;align-items:stretch}.rowBtns{display:grid;grid-template-columns:repeat(3,1fr)}.grid2,.quick{grid-template-columns:1fr 1fr}.screen{padding:10px 10px 96px}.nav button{font-size:11px}}
 `;
+
